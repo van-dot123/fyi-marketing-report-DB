@@ -62,9 +62,20 @@ function StatCard({
   );
 }
 
-function ProductMetrics({ spend }: { spend: number }) {
-  const [status, setStatus] = useState<"loading" | "connecting" | "no-data" | "ready">("loading");
-  const [count, setCount] = useState(0);
+interface ProductData {
+  total: number;
+  paid: number;
+  organic: number;
+  direct: number;
+  jobApps: number;
+}
+
+const PAID_SOURCES = ["MT", "meta"];
+const ORGANIC_SOURCES = ["facebook", "threads", "instagram", "zalo"];
+
+function ProductMetrics({ spend, start, end }: { spend: number; start: string; end: string }) {
+  const [status, setStatus] = useState<"loading" | "connecting" | "ready">("loading");
+  const [data, setData] = useState<ProductData>({ total: 0, paid: 0, organic: 0, direct: 0, jobApps: 0 });
 
   useEffect(() => {
     if (!supabase) {
@@ -73,39 +84,88 @@ function ProductMetrics({ spend }: { spend: number }) {
     }
     let active = true;
     setStatus("loading");
-    supabase
-      .from("salary_submissions")
-      .select("*", { count: "exact", head: true })
-      .then(({ count: rows, error }) => {
-        if (!active) return;
-        if (error) setStatus("connecting");
-        else if (!rows) {
-          setCount(0);
-          setStatus("no-data");
-        } else {
-          setCount(rows);
-          setStatus("ready");
-        }
+    const lo = `${start}T00:00:00`;
+    const hi = `${end}T23:59:59`;
+    const subs = () =>
+      supabase!
+        .from("submissions")
+        .select("*", { count: "exact", head: true })
+        .gte("created_at", lo)
+        .lte("created_at", hi);
+
+    Promise.all([
+      subs(),
+      subs().in("source", PAID_SOURCES),
+      subs().in("source", ORGANIC_SOURCES),
+      subs().eq("source", "direct"),
+      supabase
+        .from("job_applications")
+        .select("*", { count: "exact", head: true })
+        .gte("created_at", lo)
+        .lte("created_at", hi),
+    ]).then((res) => {
+      if (!active) return;
+      if (res.some((r) => r.error)) {
+        setStatus("connecting");
+        return;
+      }
+      setData({
+        total: res[0].count ?? 0,
+        paid: res[1].count ?? 0,
+        organic: res[2].count ?? 0,
+        direct: res[3].count ?? 0,
+        jobApps: res[4].count ?? 0,
       });
+      setStatus("ready");
+    });
     return () => {
       active = false;
     };
-  }, []);
+  }, [start, end]);
 
   if (status === "loading") {
     return <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-400 shadow-sm">Loading submissions…</div>;
   }
-  if (status !== "ready") return <EmptyState variant={status} />;
+  if (status === "connecting") return <EmptyState variant="connecting" />;
+  if (data.total === 0) return <EmptyState variant="no-data" />;
 
-  const bothPresent = spend > 0 && count > 0;
+  const breakdown = [
+    { label: "Paid (MT / meta)", value: data.paid },
+    { label: "Organic (SNS)", value: data.organic },
+    { label: "Direct", value: data.direct },
+  ];
+
   return (
-    <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-      <StatCard label="Submissions" value={count} unit="number" />
-      {bothPresent ? (
-        <StatCard label="Cost per Submission" value={Math.round(spend / count)} unit="currency" />
-      ) : (
-        <EmptyState variant="no-data" message="Need both spend and submission data" />
-      )}
+    <div className="space-y-5">
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
+        <StatCard label="Submissions" value={data.total} unit="number" />
+        <StatCard label="Job Applications" value={data.jobApps} unit="number" />
+        <StatCard
+          label="Cost per Submission"
+          value={spend > 0 ? Math.round(spend / data.total) : 0}
+          unit="currency"
+        />
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+        <h3 className="mb-4 text-sm font-semibold text-slate-700">Submissions by source</h3>
+        <div className="space-y-3">
+          {breakdown.map((b) => (
+            <div key={b.label} className="flex items-center gap-3">
+              <span className="w-36 shrink-0 text-sm text-slate-600">{b.label}</span>
+              <div className="h-2 flex-1 rounded-full bg-slate-100">
+                <div
+                  className="h-2 rounded-full bg-purple-600"
+                  style={{ width: `${data.total ? ((b.value / data.total) * 100).toFixed(1) : 0}%` }}
+                />
+              </div>
+              <span className="w-12 shrink-0 text-right text-sm font-bold tabular-nums text-slate-900">
+                {formatNumber(b.value)}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -207,7 +267,7 @@ export default function Overview({
 
       <section>
         <SectionHead title="Product metrics" href="/funnel" cta="View details" />
-        <ProductMetrics spend={spend} />
+        <ProductMetrics spend={spend} start={start} end={end} />
       </section>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
