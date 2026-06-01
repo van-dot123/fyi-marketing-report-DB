@@ -2,14 +2,10 @@
 
 import { Fragment, useEffect, useState } from "react";
 import Link from "next/link";
-import {
-  AlertTriangle,
-  ArrowDown,
-  ArrowDownRight,
-  ArrowUpRight,
-} from "lucide-react";
+import { AlertTriangle, ArrowDown } from "lucide-react";
 import SpendSessionsChart from "@/components/SpendSessionsChart";
 import EmptyState from "@/components/EmptyState";
+import ComparisonBadge from "@/components/ComparisonBadge";
 import { useDateRange } from "@/components/DateRangePicker";
 import { supabase } from "@/lib/supabase";
 import { Ga4Day, MetaDay, SnsPostRow } from "@/lib/realData";
@@ -17,20 +13,15 @@ import {
   PLATFORM_COLORS,
   funnelWeekly,
   inRange,
+  metaTotals,
   paidCreatives,
   paidMetrics,
+  trafficTotals,
   trafficWeekly,
 } from "@/lib/aggregate";
-import { Unit, formatNumber, formatPct, formatPercent, formatValue } from "@/lib/format";
+import { Unit, formatNumber, formatPercent, formatPeriod, formatValue } from "@/lib/format";
 
 const sum = (nums: number[]) => nums.reduce((a, b) => a + b, 0);
-
-function wowOf(series: number[]): number {
-  const n = series.length;
-  if (n < 2) return 0;
-  const prev = series[n - 2];
-  return prev ? (series[n - 1] - prev) / prev : 0;
-}
 
 const CR_BENCHMARKS = [
   { green: 0.03, amber: 0.01 },
@@ -45,22 +36,28 @@ function crColor(index: number, cr: number): string {
   return "bg-red-50 text-red-700";
 }
 
-function WowBadge({ wow }: { wow: number }) {
-  const positive = wow >= 0;
-  return (
-    <span className={["inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-xs font-semibold", positive ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-600"].join(" ")}>
-      {positive ? <ArrowUpRight className="h-3.5 w-3.5" /> : <ArrowDownRight className="h-3.5 w-3.5" />}
-      {formatPct(wow)}
-    </span>
-  );
-}
-
-function StatCard({ label, value, unit, wow }: { label: string; value: number; unit: Unit; wow?: number }) {
+function StatCard({
+  label,
+  value,
+  unit,
+  previous,
+  periodLabel,
+}: {
+  label: string;
+  value: number;
+  unit: Unit;
+  previous?: number | null;
+  periodLabel?: string;
+}) {
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
       <p className="text-sm font-medium text-slate-500">{label}</p>
       <p className="mt-2 text-2xl font-bold text-slate-900">{formatValue(value, unit)}</p>
-      {wow !== undefined && <div className="mt-2"><WowBadge wow={wow} /></div>}
+      {periodLabel !== undefined && (
+        <div className="mt-2">
+          <ComparisonBadge value={value} previous={previous ?? null} periodLabel={periodLabel} />
+        </div>
+      )}
     </div>
   );
 }
@@ -137,10 +134,16 @@ export default function Overview({
   sns: SnsPostRow[];
   missingKey: boolean;
 }) {
-  const { start, end } = useDateRange();
+  const { start, end, previousStart, previousEnd } = useDateRange();
   const paidDays = inRange(meta, start, end);
   const ga4Days = inRange(ga4, start, end);
   const snsDays = inRange(sns, start, end);
+
+  const periodLabel = formatPeriod(previousStart, previousEnd);
+  const prevPaid = inRange(meta, previousStart, previousEnd);
+  const prevGa4 = inRange(ga4, previousStart, previousEnd);
+  const prevPaidTotals = prevPaid.length ? metaTotals(prevPaid) : null;
+  const prevTraffic = prevGa4.length ? trafficTotals(prevGa4) : null;
 
   const paidCards = paidMetrics(paidDays);
 
@@ -180,7 +183,14 @@ export default function Overview({
         <SectionHead title="Paid metrics" href="/paid" cta="View details" />
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
           {paidCards.map((metric) => (
-            <StatCard key={metric.key} label={metric.label} value={metric.value} unit={metric.unit} wow={wowOf(metric.series)} />
+            <StatCard
+              key={metric.key}
+              label={metric.label}
+              value={metric.value}
+              unit={metric.unit}
+              previous={prevPaidTotals ? prevPaidTotals[metric.key] : null}
+              periodLabel={periodLabel}
+            />
           ))}
         </div>
       </section>
@@ -188,10 +198,10 @@ export default function Overview({
       <section>
         <SectionHead title="Traffic metrics" href="/sns" cta="View details" />
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
-          <StatCard label="Total Sessions" value={sum(totalSeries)} unit="number" wow={wowOf(totalSeries)} />
-          <StatCard label="Paid Sessions (meta)" value={sum(paidSeries)} unit="number" wow={wowOf(paidSeries)} />
-          <StatCard label="Organic Sessions (SNS)" value={sum(orgSeries)} unit="number" wow={wowOf(orgSeries)} />
-          <StatCard label="Direct & Other" value={sum(otherSeries)} unit="number" wow={wowOf(otherSeries)} />
+          <StatCard label="Total Sessions" value={sum(totalSeries)} unit="number" previous={prevTraffic ? prevTraffic.total : null} periodLabel={periodLabel} />
+          <StatCard label="Paid Sessions (meta)" value={sum(paidSeries)} unit="number" previous={prevTraffic ? prevTraffic.paid : null} periodLabel={periodLabel} />
+          <StatCard label="Organic Sessions (SNS)" value={sum(orgSeries)} unit="number" previous={prevTraffic ? prevTraffic.organic : null} periodLabel={periodLabel} />
+          <StatCard label="Direct & Other" value={sum(otherSeries)} unit="number" previous={prevTraffic ? prevTraffic.other : null} periodLabel={periodLabel} />
         </div>
       </section>
 

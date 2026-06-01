@@ -19,18 +19,22 @@ import { MetaDay } from "@/lib/realData";
 import {
   PRODUCT_COLORS,
   inRange,
+  metaTotals,
   paidCreatives,
   paidMetrics,
   paidPivot,
   paidProducts,
 } from "@/lib/aggregate";
-import { formatCurrency, formatNumber, formatPercent } from "@/lib/format";
+import { formatCurrency, formatNumber, formatPercent, formatPeriod } from "@/lib/format";
 
 const color = (p: string) => PRODUCT_COLORS[p] ?? "#94a3b8";
 
 export default function PaidView({ meta }: { meta: MetaDay[] }) {
-  const { start, end } = useDateRange();
+  const { start, end, previousStart, previousEnd } = useDateRange();
   const days = inRange(meta, start, end);
+  const prevDays = inRange(meta, previousStart, previousEnd);
+  const prevTotals = prevDays.length ? metaTotals(prevDays) : null;
+  const periodLabel = formatPeriod(previousStart, previousEnd);
 
   if (days.length === 0) {
     return (
@@ -51,7 +55,12 @@ export default function PaidView({ meta }: { meta: MetaDay[] }) {
     <>
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
         {metrics.map((metric) => (
-          <MetricCard key={metric.key} metric={metric} />
+          <MetricCard
+            key={metric.key}
+            metric={metric}
+            previous={prevTotals ? prevTotals[metric.key] : null}
+            periodLabel={periodLabel}
+          />
         ))}
       </div>
 

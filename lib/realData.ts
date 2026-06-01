@@ -83,6 +83,7 @@ export interface SnsPostRow {
   views: number;
   reach: number;
   interactions: number;
+  reactions: number;
   comments: number;
   shares: number;
   url: string;
@@ -90,6 +91,9 @@ export interface SnsPostRow {
 
 function mapMeta(r: string[], platform: SnsPlatform): SnsPostRow {
   const date = dayOf(r[0]);
+  const interactions = intNum(r[5]);
+  const comments = intNum(r[6]);
+  const shares = intNum(r[7]);
   return {
     platform,
     date,
@@ -97,9 +101,10 @@ function mapMeta(r: string[], platform: SnsPlatform): SnsPostRow {
     pillar: r[10] || "Uncategorized",
     views: intNum(r[3]),
     reach: intNum(r[4]),
-    interactions: intNum(r[5]),
-    comments: intNum(r[6]),
-    shares: intNum(r[7]),
+    interactions,
+    reactions: Math.max(0, interactions - comments - shares),
+    comments,
+    shares,
     url: r[2] ?? "#",
   };
 }
@@ -120,8 +125,9 @@ function mapThreads(r: string[]): SnsPostRow {
     views,
     reach: views,
     interactions: likes + comments + reposts + quotes + shares,
+    reactions: likes,
     comments,
-    shares,
+    shares: reposts + quotes + shares,
     url: r[2] ?? "#",
   };
 }

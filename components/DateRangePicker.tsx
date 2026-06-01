@@ -21,19 +21,36 @@ interface DateRangeValue {
 }
 
 interface DateRangeContextValue extends DateRangeValue {
+  previousStart: string;
+  previousEnd: string;
   setRange: (start: string, end: string) => void;
 }
 
 const DateRangeContext = createContext<DateRangeContextValue | null>(null);
+
+function previousPeriod(start: string, end: string) {
+  const days =
+    Math.round((fromISO(end).getTime() - fromISO(start).getTime()) / 86400000) + 1;
+  return {
+    previousStart: toISO(addDays(fromISO(start), -days)),
+    previousEnd: toISO(addDays(fromISO(start), -1)),
+  };
+}
 
 export function DateRangeProvider({ children }: { children: ReactNode }) {
   const [range, setRange] = useState<DateRangeValue>({
     start: DEFAULT_START,
     end: DEFAULT_END,
   });
+  const { previousStart, previousEnd } = previousPeriod(range.start, range.end);
   return (
     <DateRangeContext.Provider
-      value={{ ...range, setRange: (start, end) => setRange({ start, end }) }}
+      value={{
+        ...range,
+        previousStart,
+        previousEnd,
+        setRange: (start, end) => setRange({ start, end }),
+      }}
     >
       {children}
     </DateRangeContext.Provider>

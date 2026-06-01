@@ -19,6 +19,18 @@ export function formatPercent(value: number): string {
   return `${(value * 100).toFixed(2)}%`;
 }
 
+export function formatDateShort(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+  });
+}
+
+export function formatPeriod(start: string, end: string): string {
+  return `${formatDateShort(start)} – ${formatDateShort(end)}`;
+}
+
 export type Unit = "currency" | "number" | "percent";
 
 export function formatValue(value: number, unit: Unit): string {

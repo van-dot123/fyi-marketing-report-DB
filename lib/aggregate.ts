@@ -79,6 +79,37 @@ export function metaWeekly(days: MetaDay[]): MetaWeek[] {
   });
 }
 
+export function metaTotals(days: MetaDay[]): Record<string, number> {
+  const spend = sum(days.map((d) => d.spend));
+  const leads = sum(days.map((d) => d.leads));
+  const clicks = sum(days.map((d) => d.clicks));
+  const impr = sum(days.map((d) => d.impressions));
+  return {
+    spend,
+    leads,
+    cpl: leads ? Math.round(spend / leads) : 0,
+    ctr: impr ? clicks / impr : 0,
+  };
+}
+
+export function trafficTotals(ga4: Ga4Day[]): Record<string, number> {
+  const total = sum(ga4.map((d) => d.sessions));
+  const paid = sum(ga4.filter((d) => d.channel === "paid").map((d) => d.sessions));
+  const organic = sum(ga4.filter((d) => d.channel === "organic").map((d) => d.sessions));
+  return { total, paid, organic, other: total - paid - organic };
+}
+
+export function snsTotals(
+  posts: SnsPostRow[],
+  tab: PlatformTab
+): Record<string, number> {
+  const subset = platformPosts(posts, tab);
+  const views = sum(subset.map((p) => p.views));
+  const interactions = sum(subset.map((p) => p.interactions));
+  const reach = sum(subset.map((p) => p.reach));
+  return { views, interactions, reach, er: views ? interactions / views : 0 };
+}
+
 export function paidProducts(days: MetaDay[]): string[] {
   return [...new Set(days.map((d) => d.product).filter(Boolean))];
 }

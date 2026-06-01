@@ -12,9 +12,10 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { ArrowDownRight, ArrowUpRight, ChevronDown, ExternalLink } from "lucide-react";
+import { ChevronDown, ExternalLink, Eye, Heart, MessageCircle, Share2 } from "lucide-react";
 import EmptyState from "@/components/EmptyState";
 import PostThumbnail from "@/components/PostThumbnail";
+import ComparisonBadge from "@/components/ComparisonBadge";
 import { useDateRange } from "@/components/DateRangePicker";
 import { SnsPlatform, SnsPostRow } from "@/lib/realData";
 import {
@@ -23,26 +24,10 @@ import {
   pillarHeatmap,
   snsMetrics,
   snsPlatforms,
+  snsTotals,
   snsWeekly,
 } from "@/lib/aggregate";
-import { formatNumber, formatPct, formatValue } from "@/lib/format";
-
-function wowOf(series: number[]): number {
-  const n = series.length;
-  if (n < 2) return 0;
-  const prev = series[n - 2];
-  return prev ? (series[n - 1] - prev) / prev : 0;
-}
-
-function WowBadge({ wow }: { wow: number }) {
-  const positive = wow >= 0;
-  return (
-    <span className={["inline-flex items-center gap-0.5 text-xs font-semibold", positive ? "text-emerald-600" : "text-red-600"].join(" ")}>
-      {positive ? <ArrowUpRight className="h-3.5 w-3.5" /> : <ArrowDownRight className="h-3.5 w-3.5" />}
-      {formatPct(wow)}
-    </span>
-  );
-}
+import { formatNumber, formatPeriod, formatValue } from "@/lib/format";
 
 interface Cell {
   pillar: string;
@@ -50,12 +35,15 @@ interface Cell {
 }
 
 export default function SnsView({ posts }: { posts: SnsPostRow[] }) {
-  const { start, end } = useDateRange();
+  const { start, end, previousStart, previousEnd } = useDateRange();
   const [tab, setTab] = useState<PlatformTab>("All");
   const [activeMetric, setActiveMetric] = useState("views");
   const [cell, setCell] = useState<Cell | null>(null);
 
   const ranged = inRange(posts, start, end);
+  const prevRanged = inRange(posts, previousStart, previousEnd);
+  const prevTotals = prevRanged.length ? snsTotals(prevRanged, tab) : null;
+  const periodLabel = formatPeriod(previousStart, previousEnd);
   const tabs: PlatformTab[] = ["All", ...snsPlatforms(posts)];
   const metrics = snsMetrics(ranged, tab);
   const weekly = snsWeekly(ranged, tab);
@@ -103,7 +91,9 @@ export default function SnsView({ posts }: { posts: SnsPostRow[] }) {
             >
               <p className="text-sm font-medium text-slate-500">{m.label}</p>
               <p className="mt-1 text-xl font-bold text-slate-900">{formatValue(m.value, m.unit)}</p>
-              <div className="mt-1"><WowBadge wow={wowOf(m.series)} /></div>
+              <div className="mt-1">
+                <ComparisonBadge value={m.value} previous={prevTotals ? prevTotals[m.key] : null} periodLabel={periodLabel} />
+              </div>
             </button>
           );
         })}
@@ -179,9 +169,11 @@ export default function SnsView({ posts }: { posts: SnsPostRow[] }) {
                 <a href={card.url} className="text-purple-600 hover:text-purple-700" aria-label="Open post"><ExternalLink className="h-4 w-4" /></a>
               </div>
               <p className="mt-2 text-xs text-slate-400">{card.date}</p>
-              <div className="mt-3 flex items-center gap-4 border-t border-slate-50 pt-3 text-xs">
-                <span className="text-slate-500">👁 {formatNumber(card.views)}</span>
-                <span className="font-medium text-slate-800">❤ {formatNumber(card.interactions)}</span>
+              <div className="mt-3 grid grid-cols-2 gap-y-2 border-t border-slate-50 pt-3 text-xs text-slate-600">
+                <span className="flex items-center gap-1"><Eye className="h-3.5 w-3.5 text-slate-400" /> {formatNumber(card.views)}</span>
+                <span className="flex items-center gap-1"><Heart className="h-3.5 w-3.5 text-slate-400" /> {formatNumber(card.reactions)}</span>
+                <span className="flex items-center gap-1"><MessageCircle className="h-3.5 w-3.5 text-slate-400" /> {formatNumber(card.comments)}</span>
+                <span className="flex items-center gap-1"><Share2 className="h-3.5 w-3.5 text-slate-400" /> {formatNumber(card.shares)}</span>
               </div>
             </div>
           ))}
