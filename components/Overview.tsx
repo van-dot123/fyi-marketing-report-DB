@@ -87,7 +87,15 @@ function StatCard({
   );
 }
 
-function ProductMetrics({ spend }: { spend: number }) {
+function ProductMetrics({
+  spend,
+  start,
+  end,
+}: {
+  spend: number;
+  start: string;
+  end: string;
+}) {
   const [status, setStatus] = useState<
     "loading" | "connecting" | "no-data" | "ready"
   >("loading");
@@ -99,22 +107,27 @@ function ProductMetrics({ spend }: { spend: number }) {
       return;
     }
     let active = true;
+    setStatus("loading");
     supabase
       .from("salary_submissions")
-      .select("*")
-      .then(({ data, error }) => {
+      .select("*", { count: "exact", head: true })
+      .gte("created_at", `${start}T00:00:00`)
+      .lte("created_at", `${end}T23:59:59`)
+      .then(({ count: rows, error }) => {
         if (!active) return;
-        if (error || !data) setStatus("connecting");
-        else if (data.length === 0) setStatus("no-data");
-        else {
-          setCount(data.length);
+        if (error) setStatus("connecting");
+        else if (!rows) {
+          setCount(0);
+          setStatus("no-data");
+        } else {
+          setCount(rows);
           setStatus("ready");
         }
       });
     return () => {
       active = false;
     };
-  }, []);
+  }, [start, end]);
 
   if (status === "loading") {
     return (
@@ -125,14 +138,23 @@ function ProductMetrics({ spend }: { spend: number }) {
   }
   if (status !== "ready") return <EmptyState variant={status} />;
 
+  const bothPresent = spend > 0 && count > 0;
+
   return (
     <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
       <StatCard label="Submissions" value={count} unit="number" />
-      <StatCard
-        label="Cost per Submission"
-        value={count ? Math.round(spend / count) : 0}
-        unit="currency"
-      />
+      {bothPresent ? (
+        <StatCard
+          label="Cost per Submission"
+          value={Math.round(spend / count)}
+          unit="currency"
+        />
+      ) : (
+        <EmptyState
+          variant="no-data"
+          message="Need both spend and submission data"
+        />
+      )}
     </div>
   );
 }
@@ -218,7 +240,7 @@ export default function Overview({ missingKey }: { missingKey: boolean }) {
 
       <section>
         <SectionHead title="Product metrics" href="/funnel" cta="View details" />
-        <ProductMetrics spend={spend} />
+        <ProductMetrics spend={spend} start={start} end={end} />
       </section>
 
       <section>
