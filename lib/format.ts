@@ -1,7 +1,7 @@
 export function formatCurrency(value: number): string {
-  return new Intl.NumberFormat("vi-VN", {
+  return new Intl.NumberFormat("ko-KR", {
     style: "currency",
-    currency: "VND",
+    currency: "KRW",
     maximumFractionDigits: 0,
   }).format(value);
 }

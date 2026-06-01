@@ -52,7 +52,7 @@ export default function SpendSessionsChart() {
               axisLine={false}
               tick={{ fill: "#64748b", fontSize: 12 }}
               label={{
-                value: "Spend (₫)",
+                value: "Spend (₩)",
                 angle: -90,
                 position: "insideLeft",
                 fill: "#94a3b8",
