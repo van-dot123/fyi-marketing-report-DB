@@ -1,5 +1,4 @@
 import {
-  ALLOWED_META_PRODUCTS,
   GA4Row,
   MetaProduct,
   MetaRow,
@@ -10,6 +9,7 @@ import {
 } from "@/types";
 
 const META_COLS = {
+  campaign: 0,
   date: 3,
   product: 18,
   ad_name: 2,
@@ -19,6 +19,8 @@ const META_COLS = {
   leads: 14,
   audience: 22,
 };
+
+const META_CAMPAIGN_INCLUDES = "FYI";
 
 const SNS_COLS = {
   facebook: { date: 0, pillar: 1, reach: 2, impressions: 3, engagement: 4 },
@@ -53,7 +55,9 @@ function pillar(key: string): string {
 export function parseMetaAds(rows: string[][]): MetaRow[] {
   return rows
     .filter((r) =>
-      ALLOWED_META_PRODUCTS.includes(r[META_COLS.product] as MetaProduct)
+      String(r[META_COLS.campaign] ?? "")
+        .toUpperCase()
+        .includes(META_CAMPAIGN_INCLUDES)
     )
     .map((r) => {
       const date = isoDate(r[META_COLS.date]);
