@@ -65,9 +65,9 @@ function StatCard({ label, value, unit, wow }: { label: string; value: number; u
   );
 }
 
-function ProductMetrics({ spend, start, end, mockSubmissions }: { spend: number; start: string; end: string; mockSubmissions: number }) {
+function ProductMetrics({ spend, start, end }: { spend: number; start: string; end: string }) {
   const [status, setStatus] = useState<"loading" | "connecting" | "no-data" | "ready">("loading");
-  const [realCount, setRealCount] = useState(0);
+  const [count, setCount] = useState(0);
 
   useEffect(() => {
     if (!supabase) {
@@ -81,14 +81,14 @@ function ProductMetrics({ spend, start, end, mockSubmissions }: { spend: number;
       .select("*", { count: "exact", head: true })
       .gte("created_at", `${start}T00:00:00`)
       .lte("created_at", `${end}T23:59:59`)
-      .then(({ count, error }) => {
+      .then(({ count: rows, error }) => {
         if (!active) return;
         if (error) setStatus("connecting");
-        else if (!count) {
-          setRealCount(0);
+        else if (!rows) {
+          setCount(0);
           setStatus("no-data");
         } else {
-          setRealCount(count);
+          setCount(rows);
           setStatus("ready");
         }
       });
@@ -100,24 +100,17 @@ function ProductMetrics({ spend, start, end, mockSubmissions }: { spend: number;
   if (status === "loading") {
     return <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-400 shadow-sm">Loading submissions…</div>;
   }
-  if (status === "no-data") return <EmptyState variant="no-data" />;
-
-  const isFallback = status === "connecting";
-  const count = isFallback ? mockSubmissions : realCount;
-  if (count === 0) return <EmptyState variant="no-data" message="Need both spend and submission data" />;
+  if (status !== "ready") return <EmptyState variant={status} />;
 
   const bothPresent = spend > 0 && count > 0;
   return (
-    <div>
-      {isFallback && <p className="mb-2 text-xs font-medium text-amber-600">Mock fallback (GA4 conversions) — Supabase unavailable</p>}
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-        <StatCard label="Submissions" value={count} unit="number" />
-        {bothPresent ? (
-          <StatCard label="Cost per Submission" value={Math.round(spend / count)} unit="currency" />
-        ) : (
-          <EmptyState variant="no-data" message="Need both spend and submission data" />
-        )}
-      </div>
+    <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+      <StatCard label="Submissions" value={count} unit="number" />
+      {bothPresent ? (
+        <StatCard label="Cost per Submission" value={Math.round(spend / count)} unit="currency" />
+      ) : (
+        <EmptyState variant="no-data" message="Need both spend and submission data" />
+      )}
     </div>
   );
 }
@@ -206,7 +199,7 @@ export default function Overview({
 
       <section>
         <SectionHead title="Product metrics" href="/funnel" cta="View details" />
-        <ProductMetrics spend={spend} start={start} end={end} mockSubmissions={stages[3].value} />
+        <ProductMetrics spend={spend} start={start} end={end} />
       </section>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
