@@ -22,32 +22,39 @@ export interface MetricSummary {
   series: number[];
 }
 
+const sum = (nums: number[]) => nums.reduce((acc, n) => acc + n, 0);
+
+const totalSpend = sum(weekly.map((w) => w.spend));
+const totalLeads = sum(weekly.map((w) => w.leads));
+const totalSessions = sum(weekly.map((w) => w.sessions));
+const blendedCpl = totalLeads ? Math.round(totalSpend / totalLeads) : 0;
+
 export const metricSummaries: MetricSummary[] = [
   {
     key: "spend",
     label: "Total Spend",
-    value: 775000,
+    value: totalSpend,
     unit: "currency",
     series: weekly.map((w) => w.spend),
   },
   {
     key: "leads",
     label: "Leads",
-    value: 1969,
+    value: totalLeads,
     unit: "number",
     series: weekly.map((w) => w.leads),
   },
   {
     key: "cpl",
     label: "CPL",
-    value: 394,
+    value: blendedCpl,
     unit: "currency",
     series: weekly.map((w) => w.cpl),
   },
   {
     key: "sessions",
     label: "Sessions",
-    value: 10576,
+    value: totalSessions,
     unit: "number",
     series: weekly.map((w) => w.sessions),
   },
