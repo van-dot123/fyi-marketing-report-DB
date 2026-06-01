@@ -263,7 +263,7 @@ export default function Overview({ missingKey }: { missingKey: boolean }) {
           <StatCard label="Total Sessions" value={sum(sessionsSeries)} unit="number" wow={wowOf(sessionsSeries)} />
           <StatCard label="Paid Sessions (meta)" value={sum(paidSessSeries)} unit="number" wow={wowOf(paidSessSeries)} />
           <StatCard label="Organic Sessions (SNS)" value={sum(orgSessSeries)} unit="number" wow={wowOf(orgSessSeries)} />
-          <StatCard label="Other Sessions" value={sum(otherSessSeries)} unit="number" wow={wowOf(otherSessSeries)} />
+          <StatCard label="Direct & Other" value={sum(otherSessSeries)} unit="number" wow={wowOf(otherSessSeries)} />
         </div>
       </section>
 
