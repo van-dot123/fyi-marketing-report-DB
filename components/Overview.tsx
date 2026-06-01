@@ -91,15 +91,17 @@ function ProductMetrics({
   spend,
   start,
   end,
+  mockSubmissions,
 }: {
   spend: number;
   start: string;
   end: string;
+  mockSubmissions: number;
 }) {
   const [status, setStatus] = useState<
     "loading" | "connecting" | "no-data" | "ready"
   >("loading");
-  const [count, setCount] = useState(0);
+  const [realCount, setRealCount] = useState(0);
 
   useEffect(() => {
     if (!supabase) {
@@ -117,10 +119,10 @@ function ProductMetrics({
         if (!active) return;
         if (error) setStatus("connecting");
         else if (!rows) {
-          setCount(0);
+          setRealCount(0);
           setStatus("no-data");
         } else {
-          setCount(rows);
+          setRealCount(rows);
           setStatus("ready");
         }
       });
@@ -136,25 +138,43 @@ function ProductMetrics({
       </div>
     );
   }
-  if (status !== "ready") return <EmptyState variant={status} />;
+  if (status === "no-data") return <EmptyState variant="no-data" />;
+
+  const isFallback = status === "connecting";
+  const count = isFallback ? mockSubmissions : realCount;
+
+  if (count === 0)
+    return (
+      <EmptyState
+        variant="no-data"
+        message="Need both spend and submission data"
+      />
+    );
 
   const bothPresent = spend > 0 && count > 0;
 
   return (
-    <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-      <StatCard label="Submissions" value={count} unit="number" />
-      {bothPresent ? (
-        <StatCard
-          label="Cost per Submission"
-          value={Math.round(spend / count)}
-          unit="currency"
-        />
-      ) : (
-        <EmptyState
-          variant="no-data"
-          message="Need both spend and submission data"
-        />
+    <div>
+      {isFallback && (
+        <p className="mb-2 text-xs font-medium text-amber-600">
+          Mock data — Supabase unavailable
+        </p>
       )}
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+        <StatCard label="Submissions" value={count} unit="number" />
+        {bothPresent ? (
+          <StatCard
+            label="Cost per Submission"
+            value={Math.round(spend / count)}
+            unit="currency"
+          />
+        ) : (
+          <EmptyState
+            variant="no-data"
+            message="Need both spend and submission data"
+          />
+        )}
+      </div>
     </div>
   );
 }
@@ -240,7 +260,7 @@ export default function Overview({ missingKey }: { missingKey: boolean }) {
 
       <section>
         <SectionHead title="Product metrics" href="/funnel" cta="View details" />
-        <ProductMetrics spend={spend} start={start} end={end} />
+        <ProductMetrics spend={spend} start={start} end={end} mockSubmissions={submissions} />
       </section>
 
       <section>
