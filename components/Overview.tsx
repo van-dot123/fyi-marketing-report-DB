@@ -11,11 +11,16 @@ import {
 import SpendSessionsChart from "@/components/SpendSessionsChart";
 import EmptyState from "@/components/EmptyState";
 import { useDateRange } from "@/components/DateRangePicker";
-import { filterByRange, filterWeeks } from "@/lib/mockData";
-import { paidCreatives, paidMetrics, paidRows } from "@/lib/paidData";
-import { funnelWeekly } from "@/lib/funnelData";
-import { PLATFORM_COLORS, contentCards } from "@/lib/snsContent";
 import { supabase } from "@/lib/supabase";
+import { Ga4Day, MetaDay, SnsPostRow } from "@/lib/realData";
+import {
+  PLATFORM_COLORS,
+  funnelWeekly,
+  inRange,
+  paidCreatives,
+  paidMetrics,
+  trafficWeekly,
+} from "@/lib/aggregate";
 import { Unit, formatNumber, formatPct, formatPercent, formatValue } from "@/lib/format";
 
 const sum = (nums: number[]) => nums.reduce((a, b) => a + b, 0);
@@ -30,12 +35,11 @@ function wowOf(series: number[]): number {
 const CR_BENCHMARKS = [
   { green: 0.03, amber: 0.01 },
   { green: 0.5, amber: 0.2 },
-  { green: 0.05, amber: 0.02 },
-  { green: 0.3, amber: 0.1 },
+  { green: 0.1, amber: 0.03 },
 ];
 
 function crColor(index: number, cr: number): string {
-  const b = CR_BENCHMARKS[index];
+  const b = CR_BENCHMARKS[index] ?? { green: 0.5, amber: 0.1 };
   if (cr >= b.green) return "bg-emerald-50 text-emerald-700";
   if (cr >= b.amber) return "bg-amber-50 text-amber-700";
   return "bg-red-50 text-red-700";
@@ -44,62 +48,25 @@ function crColor(index: number, cr: number): string {
 function WowBadge({ wow }: { wow: number }) {
   const positive = wow >= 0;
   return (
-    <span
-      className={[
-        "inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-xs font-semibold",
-        positive ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-600",
-      ].join(" ")}
-    >
-      {positive ? (
-        <ArrowUpRight className="h-3.5 w-3.5" />
-      ) : (
-        <ArrowDownRight className="h-3.5 w-3.5" />
-      )}
+    <span className={["inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-xs font-semibold", positive ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-600"].join(" ")}>
+      {positive ? <ArrowUpRight className="h-3.5 w-3.5" /> : <ArrowDownRight className="h-3.5 w-3.5" />}
       {formatPct(wow)}
     </span>
   );
 }
 
-function StatCard({
-  label,
-  value,
-  unit,
-  wow,
-}: {
-  label: string;
-  value: number;
-  unit: Unit;
-  wow?: number;
-}) {
+function StatCard({ label, value, unit, wow }: { label: string; value: number; unit: Unit; wow?: number }) {
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
       <p className="text-sm font-medium text-slate-500">{label}</p>
-      <p className="mt-2 text-2xl font-bold text-slate-900">
-        {formatValue(value, unit)}
-      </p>
-      {wow !== undefined && (
-        <div className="mt-2">
-          <WowBadge wow={wow} />
-        </div>
-      )}
+      <p className="mt-2 text-2xl font-bold text-slate-900">{formatValue(value, unit)}</p>
+      {wow !== undefined && <div className="mt-2"><WowBadge wow={wow} /></div>}
     </div>
   );
 }
 
-function ProductMetrics({
-  spend,
-  start,
-  end,
-  mockSubmissions,
-}: {
-  spend: number;
-  start: string;
-  end: string;
-  mockSubmissions: number;
-}) {
-  const [status, setStatus] = useState<
-    "loading" | "connecting" | "no-data" | "ready"
-  >("loading");
+function ProductMetrics({ spend, start, end, mockSubmissions }: { spend: number; start: string; end: string; mockSubmissions: number }) {
+  const [status, setStatus] = useState<"loading" | "connecting" | "no-data" | "ready">("loading");
   const [realCount, setRealCount] = useState(0);
 
   useEffect(() => {
@@ -114,14 +81,14 @@ function ProductMetrics({
       .select("*", { count: "exact", head: true })
       .gte("created_at", `${start}T00:00:00`)
       .lte("created_at", `${end}T23:59:59`)
-      .then(({ count: rows, error }) => {
+      .then(({ count, error }) => {
         if (!active) return;
         if (error) setStatus("connecting");
-        else if (!rows) {
+        else if (!count) {
           setRealCount(0);
           setStatus("no-data");
         } else {
-          setRealCount(rows);
+          setRealCount(count);
           setStatus("ready");
         }
       });
@@ -131,72 +98,36 @@ function ProductMetrics({
   }, [start, end]);
 
   if (status === "loading") {
-    return (
-      <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-400 shadow-sm">
-        Loading submissions…
-      </div>
-    );
+    return <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-400 shadow-sm">Loading submissions…</div>;
   }
   if (status === "no-data") return <EmptyState variant="no-data" />;
 
   const isFallback = status === "connecting";
   const count = isFallback ? mockSubmissions : realCount;
-
-  if (count === 0)
-    return (
-      <EmptyState
-        variant="no-data"
-        message="Need both spend and submission data"
-      />
-    );
+  if (count === 0) return <EmptyState variant="no-data" message="Need both spend and submission data" />;
 
   const bothPresent = spend > 0 && count > 0;
-
   return (
     <div>
-      {isFallback && (
-        <p className="mb-2 text-xs font-medium text-amber-600">
-          Mock data — Supabase unavailable
-        </p>
-      )}
+      {isFallback && <p className="mb-2 text-xs font-medium text-amber-600">Mock fallback (GA4 conversions) — Supabase unavailable</p>}
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
         <StatCard label="Submissions" value={count} unit="number" />
         {bothPresent ? (
-          <StatCard
-            label="Cost per Submission"
-            value={Math.round(spend / count)}
-            unit="currency"
-          />
+          <StatCard label="Cost per Submission" value={Math.round(spend / count)} unit="currency" />
         ) : (
-          <EmptyState
-            variant="no-data"
-            message="Need both spend and submission data"
-          />
+          <EmptyState variant="no-data" message="Need both spend and submission data" />
         )}
       </div>
     </div>
   );
 }
 
-function SectionHead({
-  title,
-  href,
-  cta,
-}: {
-  title: string;
-  href?: string;
-  cta?: string;
-}) {
+function SectionHead({ title, href, cta }: { title: string; href?: string; cta?: string }) {
   return (
     <div className="mb-3 flex items-center justify-between">
-      <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400">
-        {title}
-      </h2>
+      <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400">{title}</h2>
       {href && (
-        <Link
-          href={href}
-          className="text-sm font-medium text-purple-600 hover:text-purple-700"
-        >
+        <Link href={href} className="text-sm font-medium text-purple-600 hover:text-purple-700">
           {cta} →
         </Link>
       )}
@@ -204,34 +135,45 @@ function SectionHead({
   );
 }
 
-export default function Overview({ missingKey }: { missingKey: boolean }) {
+export default function Overview({
+  meta,
+  ga4,
+  sns,
+  missingKey,
+}: {
+  meta: MetaDay[];
+  ga4: Ga4Day[];
+  sns: SnsPostRow[];
+  missingKey: boolean;
+}) {
   const { start, end } = useDateRange();
-  const weeks = filterWeeks(start, end);
-  const paid = filterByRange(paidRows, start, end);
-  const funnelWeeks = filterByRange(funnelWeekly, start, end);
+  const paidDays = inRange(meta, start, end);
+  const ga4Days = inRange(ga4, start, end);
+  const snsDays = inRange(sns, start, end);
 
-  const paidCards = paidMetrics(paid);
+  const paidCards = paidMetrics(paidDays);
 
-  const sessionsSeries = weeks.map((w) => w.sessions);
-  const paidSessSeries = weeks.map((w) => Math.round(w.sessions * 0.5));
-  const orgSessSeries = weeks.map((w) => Math.round(w.sessions * 0.32));
-  const otherSessSeries = weeks.map(
-    (w, i) => w.sessions - paidSessSeries[i] - orgSessSeries[i]
-  );
+  const tw = trafficWeekly(ga4Days);
+  const totalSeries = tw.map((w) => w.total);
+  const paidSeries = tw.map((w) => w.paid);
+  const orgSeries = tw.map((w) => w.organic);
+  const otherSeries = tw.map((w) => w.other);
 
-  const submissions = sum(funnelWeeks.map((w) => w.submissions));
-  const spend = sum(funnelWeeks.map((w) => w.spend));
+  const fw = funnelWeekly(paidDays, ga4Days);
+  const fSum = (pick: (w: (typeof fw)[number]) => number) => fw.reduce((s, w) => s + pick(w), 0);
+  const spend = fSum((w) => w.spend);
+
+  const chartData = fw.map((w) => ({ week: w.week, spend: w.spend, sessions: w.sessions }));
 
   const stages = [
-    { label: "Impressions", value: sum(paid.map((r) => r.impressions)) },
-    { label: "Clicks", value: sum(paid.map((r) => r.clicks)) },
-    { label: "Sessions", value: sum(sessionsSeries) },
-    { label: "Submissions", value: submissions },
-    { label: "Job Apps", value: Math.round(submissions * 0.65) },
+    { label: "Impressions", value: fSum((w) => w.impressions) },
+    { label: "Clicks", value: fSum((w) => w.clicks) },
+    { label: "Sessions", value: fSum((w) => w.sessions) },
+    { label: "Conversions", value: fSum((w) => w.conversions) },
   ];
 
-  const bestCreative = [...paidCreatives].sort((a, b) => b.leads - a.leads)[0];
-  const bestPost = [...contentCards].sort((a, b) => b.views - a.views)[0];
+  const bestCreative = paidCreatives(paidDays)[0];
+  const bestPost = [...snsDays].sort((a, b) => b.views - a.views)[0];
 
   return (
     <div className="space-y-8">
@@ -246,13 +188,7 @@ export default function Overview({ missingKey }: { missingKey: boolean }) {
         <SectionHead title="Paid metrics" href="/paid" cta="View details" />
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
           {paidCards.map((metric) => (
-            <StatCard
-              key={metric.key}
-              label={metric.label}
-              value={metric.value}
-              unit={metric.unit}
-              wow={wowOf(metric.series)}
-            />
+            <StatCard key={metric.key} label={metric.label} value={metric.value} unit={metric.unit} wow={wowOf(metric.series)} />
           ))}
         </div>
       </section>
@@ -260,22 +196,22 @@ export default function Overview({ missingKey }: { missingKey: boolean }) {
       <section>
         <SectionHead title="Traffic metrics" href="/sns" cta="View details" />
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
-          <StatCard label="Total Sessions" value={sum(sessionsSeries)} unit="number" wow={wowOf(sessionsSeries)} />
-          <StatCard label="Paid Sessions (meta)" value={sum(paidSessSeries)} unit="number" wow={wowOf(paidSessSeries)} />
-          <StatCard label="Organic Sessions (SNS)" value={sum(orgSessSeries)} unit="number" wow={wowOf(orgSessSeries)} />
-          <StatCard label="Direct & Other" value={sum(otherSessSeries)} unit="number" wow={wowOf(otherSessSeries)} />
+          <StatCard label="Total Sessions" value={sum(totalSeries)} unit="number" wow={wowOf(totalSeries)} />
+          <StatCard label="Paid Sessions (meta)" value={sum(paidSeries)} unit="number" wow={wowOf(paidSeries)} />
+          <StatCard label="Organic Sessions (SNS)" value={sum(orgSeries)} unit="number" wow={wowOf(orgSeries)} />
+          <StatCard label="Direct & Other" value={sum(otherSeries)} unit="number" wow={wowOf(otherSeries)} />
         </div>
       </section>
 
       <section>
         <SectionHead title="Product metrics" href="/funnel" cta="View details" />
-        <ProductMetrics spend={spend} start={start} end={end} mockSubmissions={submissions} />
+        <ProductMetrics spend={spend} start={start} end={end} mockSubmissions={stages[3].value} />
       </section>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <section className="flex flex-col">
           <SectionHead title="Spend & Sessions" href="/paid" cta="View details" />
-          <SpendSessionsChart data={weeks} height={280} />
+          <SpendSessionsChart data={chartData} height={280} />
         </section>
 
         <section className="flex flex-col">
@@ -289,18 +225,11 @@ export default function Overview({ missingKey }: { missingKey: boolean }) {
                   <Fragment key={stage.label}>
                     <div className="min-w-[78px] shrink-0 rounded-lg bg-slate-50 px-2 py-3 text-center">
                       <p className="text-[11px] text-slate-500">{stage.label}</p>
-                      <p className="mt-1 text-base font-bold text-slate-900">
-                        {formatNumber(stage.value)}
-                      </p>
+                      <p className="mt-1 text-base font-bold text-slate-900">{formatNumber(stage.value)}</p>
                     </div>
                     {next && (
                       <div className="flex shrink-0 flex-col items-center gap-1">
-                        <span
-                          className={[
-                            "rounded-full px-1.5 py-0.5 text-[11px] font-semibold",
-                            crColor(i, cr),
-                          ].join(" ")}
-                        >
+                        <span className={["rounded-full px-1.5 py-0.5 text-[11px] font-semibold", crColor(i, cr)].join(" ")}>
                           {formatPercent(cr)}
                         </span>
                         <ArrowRight className="h-4 w-4 text-slate-300" />
@@ -319,63 +248,53 @@ export default function Overview({ missingKey }: { missingKey: boolean }) {
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
             <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-base font-semibold text-slate-900">
-                Best paid creative
-              </h3>
-              <Link href="/paid" className="text-sm font-medium text-purple-600 hover:text-purple-700">
-                View all →
-              </Link>
+              <h3 className="text-base font-semibold text-slate-900">Best paid creative</h3>
+              <Link href="/paid" className="text-sm font-medium text-purple-600 hover:text-purple-700">View all →</Link>
             </div>
-            <p className="font-medium text-slate-800">{bestCreative.adName}</p>
-            <div className="mt-3 flex gap-8 text-sm">
-              <div>
-                <p className="text-slate-400">CPL</p>
-                <p className="font-semibold text-slate-900">
-                  {formatValue(bestCreative.cpl, "currency")}
-                </p>
-              </div>
-              <div>
-                <p className="text-slate-400">Leads</p>
-                <p className="font-semibold text-slate-900">
-                  {formatNumber(bestCreative.leads)}
-                </p>
-              </div>
-            </div>
+            {bestCreative ? (
+              <>
+                <p className="truncate font-medium text-slate-800">{bestCreative.adName}</p>
+                <div className="mt-3 flex gap-8 text-sm">
+                  <div>
+                    <p className="text-slate-400">CPL</p>
+                    <p className="font-semibold text-slate-900">{formatValue(bestCreative.cpl, "currency")}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-400">Leads</p>
+                    <p className="font-semibold text-slate-900">{formatNumber(bestCreative.leads)}</p>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <p className="text-sm text-slate-400">No data in range.</p>
+            )}
           </div>
 
           <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
             <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-base font-semibold text-slate-900">
-                Best organic post
-              </h3>
-              <Link href="/sns" className="text-sm font-medium text-purple-600 hover:text-purple-700">
-                View all →
-              </Link>
+              <h3 className="text-base font-semibold text-slate-900">Best organic post</h3>
+              <Link href="/sns" className="text-sm font-medium text-purple-600 hover:text-purple-700">View all →</Link>
             </div>
-            <p className="line-clamp-1 font-medium text-slate-800">
-              {bestPost.caption}
-            </p>
-            <div className="mt-3 flex items-center gap-8 text-sm">
-              <div>
-                <p className="text-slate-400">Platform</p>
-                <span
-                  className="mt-1 inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium text-white"
-                  style={{ backgroundColor: PLATFORM_COLORS[bestPost.platform] }}
-                >
-                  {bestPost.platform}
-                </span>
+            {bestPost ? (
+              <div className="flex items-center gap-8 text-sm">
+                <div>
+                  <p className="text-slate-400">Platform</p>
+                  <span className="mt-1 inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium text-white" style={{ backgroundColor: PLATFORM_COLORS[bestPost.platform] }}>
+                    {bestPost.platform}
+                  </span>
+                </div>
+                <div>
+                  <p className="text-slate-400">Pillar</p>
+                  <p className="font-semibold text-slate-900">{bestPost.pillar}</p>
+                </div>
+                <div>
+                  <p className="text-slate-400">Views</p>
+                  <p className="font-semibold text-slate-900">{formatNumber(bestPost.views)}</p>
+                </div>
               </div>
-              <div>
-                <p className="text-slate-400">Pillar</p>
-                <p className="font-semibold text-slate-900">{bestPost.pillar}</p>
-              </div>
-              <div>
-                <p className="text-slate-400">Views</p>
-                <p className="font-semibold text-slate-900">
-                  {formatNumber(bestPost.views)}
-                </p>
-              </div>
-            </div>
+            ) : (
+              <p className="text-sm text-slate-400">No data in range.</p>
+            )}
           </div>
         </div>
       </section>
