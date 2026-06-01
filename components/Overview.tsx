@@ -272,45 +272,47 @@ export default function Overview({ missingKey }: { missingKey: boolean }) {
         <ProductMetrics spend={spend} start={start} end={end} mockSubmissions={submissions} />
       </section>
 
-      <section>
-        <SectionHead title="Spend & Sessions" href="/paid" cta="View details" />
-        <SpendSessionsChart data={weeks} height={280} />
-      </section>
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <section className="flex flex-col">
+          <SectionHead title="Spend & Sessions" href="/paid" cta="View details" />
+          <SpendSessionsChart data={weeks} height={280} />
+        </section>
 
-      <section>
-        <SectionHead title="Funnel snapshot" href="/funnel" cta="View full funnel" />
-        <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="flex items-center gap-2 overflow-x-auto pb-1">
-            {stages.map((stage, i) => {
-              const next = stages[i + 1];
-              const cr = next && stage.value ? next.value / stage.value : 0;
-              return (
-                <Fragment key={stage.label}>
-                  <div className="min-w-[110px] shrink-0 rounded-lg bg-slate-50 px-4 py-3 text-center">
-                    <p className="text-xs text-slate-500">{stage.label}</p>
-                    <p className="mt-1 text-lg font-bold text-slate-900">
-                      {formatNumber(stage.value)}
-                    </p>
-                  </div>
-                  {next && (
-                    <div className="flex shrink-0 flex-col items-center gap-1">
-                      <span
-                        className={[
-                          "rounded-full px-2 py-0.5 text-xs font-semibold",
-                          crColor(i, cr),
-                        ].join(" ")}
-                      >
-                        {formatPercent(cr)}
-                      </span>
-                      <ArrowRight className="h-4 w-4 text-slate-300" />
+        <section className="flex flex-col">
+          <SectionHead title="Funnel snapshot" href="/funnel" cta="View full funnel" />
+          <div className="flex flex-1 flex-col justify-center rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="flex items-center gap-2 overflow-x-auto pb-1">
+              {stages.map((stage, i) => {
+                const next = stages[i + 1];
+                const cr = next && stage.value ? next.value / stage.value : 0;
+                return (
+                  <Fragment key={stage.label}>
+                    <div className="min-w-[78px] shrink-0 rounded-lg bg-slate-50 px-2 py-3 text-center">
+                      <p className="text-[11px] text-slate-500">{stage.label}</p>
+                      <p className="mt-1 text-base font-bold text-slate-900">
+                        {formatNumber(stage.value)}
+                      </p>
                     </div>
-                  )}
-                </Fragment>
-              );
-            })}
+                    {next && (
+                      <div className="flex shrink-0 flex-col items-center gap-1">
+                        <span
+                          className={[
+                            "rounded-full px-1.5 py-0.5 text-[11px] font-semibold",
+                            crColor(i, cr),
+                          ].join(" ")}
+                        >
+                          {formatPercent(cr)}
+                        </span>
+                        <ArrowRight className="h-4 w-4 text-slate-300" />
+                      </div>
+                    )}
+                  </Fragment>
+                );
+              })}
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      </div>
 
       <section>
         <SectionHead title="Quick glance" />
