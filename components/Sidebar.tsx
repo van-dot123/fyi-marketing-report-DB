@@ -28,9 +28,9 @@ export default function Sidebar() {
   const [active, setActive] = useState("overview");
 
   return (
-    <aside className="flex h-screen w-60 flex-col bg-slate-900 px-4 py-6 text-slate-300">
+    <aside className="flex h-full w-60 flex-col bg-[#1a1a2e] px-4 py-6 text-slate-300">
       <div className="mb-10 flex items-center gap-2 px-2">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand font-bold text-white">
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-purple-600 font-bold text-white">
           F
         </div>
         <span className="text-xl font-bold tracking-tight text-white">FYI</span>
@@ -46,8 +46,8 @@ export default function Sidebar() {
               className={[
                 "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
                 isActive
-                  ? "bg-brand text-white"
-                  : "text-slate-400 hover:bg-slate-800 hover:text-white",
+                  ? "bg-purple-600 text-white"
+                  : "text-slate-400 hover:bg-white/5 hover:text-white",
               ].join(" ")}
             >
               <Icon className="h-5 w-5" />

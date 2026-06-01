@@ -1,6 +1,6 @@
 "use client";
 
-import { Line, LineChart, ResponsiveContainer } from "recharts";
+import { Line, LineChart } from "recharts";
 import {
   LucideIcon,
   Wallet,
@@ -49,19 +49,15 @@ export default function MetricCard({ metric }: { metric: MetricSummary }) {
           {formatPct(wow)} WoW
         </span>
 
-        <div className="h-9 w-24">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={sparkData}>
-              <Line
-                type="monotone"
-                dataKey="v"
-                stroke={positive ? "#10b981" : "#ef4444"}
-                strokeWidth={2}
-                dot={false}
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
+        <LineChart width={60} height={30} data={sparkData}>
+          <Line
+            type="monotone"
+            dataKey="v"
+            stroke={positive ? "#10b981" : "#ef4444"}
+            strokeWidth={2}
+            dot={false}
+          />
+        </LineChart>
       </div>
     </div>
   );
