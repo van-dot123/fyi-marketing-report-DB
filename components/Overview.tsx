@@ -4,8 +4,8 @@ import { Fragment, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
+  ArrowDown,
   ArrowDownRight,
-  ArrowRight,
   ArrowUpRight,
 } from "lucide-react";
 import SpendSessionsChart from "@/components/SpendSessionsChart";
@@ -171,6 +171,7 @@ export default function Overview({
     { label: "Sessions", value: fSum((w) => w.sessions) },
     { label: "Conversions", value: fSum((w) => w.conversions) },
   ];
+  const funnelMax = stages[0].value || 1;
 
   const bestCreative = paidCreatives(paidDays)[0];
   const bestPost = [...snsDays].sort((a, b) => b.views - a.views)[0];
@@ -217,28 +218,32 @@ export default function Overview({
         <section className="flex flex-col">
           <SectionHead title="Funnel snapshot" href="/funnel" cta="View full funnel" />
           <div className="flex flex-1 flex-col justify-center rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="flex items-center gap-2 overflow-x-auto pb-1">
-              {stages.map((stage, i) => {
-                const next = stages[i + 1];
-                const cr = next && stage.value ? next.value / stage.value : 0;
-                return (
-                  <Fragment key={stage.label}>
-                    <div className="min-w-[78px] shrink-0 rounded-lg bg-slate-50 px-2 py-3 text-center">
-                      <p className="text-[11px] text-slate-500">{stage.label}</p>
-                      <p className="mt-1 text-base font-bold text-slate-900">{formatNumber(stage.value)}</p>
+            {stages.map((stage, i) => {
+              const next = stages[i + 1];
+              const cr = next && stage.value ? next.value / stage.value : 0;
+              const width = `${((stage.value / funnelMax) * 100).toFixed(1)}%`;
+              return (
+                <Fragment key={stage.label}>
+                  <div className="flex items-center gap-3">
+                    <span className="w-[120px] shrink-0 text-sm text-slate-600">{stage.label}</span>
+                    <div className="h-2 flex-1 rounded-full bg-slate-100">
+                      <div className="h-2 rounded-full bg-purple-600" style={{ width }} />
                     </div>
-                    {next && (
-                      <div className="flex shrink-0 flex-col items-center gap-1">
-                        <span className={["rounded-full px-1.5 py-0.5 text-[11px] font-semibold", crColor(i, cr)].join(" ")}>
-                          {formatPercent(cr)}
-                        </span>
-                        <ArrowRight className="h-4 w-4 text-slate-300" />
-                      </div>
-                    )}
-                  </Fragment>
-                );
-              })}
-            </div>
+                    <span className="w-20 shrink-0 text-right text-sm font-bold tabular-nums text-slate-900">
+                      {formatNumber(stage.value)}
+                    </span>
+                  </div>
+                  {next && (
+                    <div className="flex justify-center py-1.5">
+                      <span className={["inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[11px] font-semibold", crColor(i, cr)].join(" ")}>
+                        <ArrowDown className="h-3 w-3" />
+                        {formatPercent(cr)}
+                      </span>
+                    </div>
+                  )}
+                </Fragment>
+              );
+            })}
           </div>
         </section>
       </div>
