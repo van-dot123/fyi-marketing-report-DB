@@ -61,6 +61,8 @@ export function parseMetaAds(rows: string[][]): MetaRow[] {
         date,
         isoWeek: getISOWeek(date),
         product: r[META_COLS.product] as MetaProduct,
+        adName: r[META_COLS.ad_name] ?? "",
+        audience: r[META_COLS.audience] ?? "",
         spend: num(r[META_COLS.spend]),
         leads: num(r[META_COLS.leads]),
         clicks: num(r[META_COLS.clicks]),
@@ -71,6 +73,7 @@ export function parseMetaAds(rows: string[][]): MetaRow[] {
 
 export function aggregateMetaWeekly(rows: MetaRow[]): WeeklyMeta[] {
   const groups = new Map<string, WeeklyMeta>();
+  const audiences = new Map<string, Set<string>>();
 
   for (const r of rows) {
     const key = `${r.isoWeek}|${r.product}`;
@@ -79,6 +82,7 @@ export function aggregateMetaWeekly(rows: MetaRow[]): WeeklyMeta[] {
       {
         isoWeek: r.isoWeek,
         product: r.product,
+        audience: [],
         spend: 0,
         leads: 0,
         clicks: 0,
@@ -91,10 +95,15 @@ export function aggregateMetaWeekly(rows: MetaRow[]): WeeklyMeta[] {
     g.clicks += r.clicks;
     g.impressions += r.impressions;
     groups.set(key, g);
+
+    const set = audiences.get(key) ?? new Set<string>();
+    if (r.audience) set.add(r.audience);
+    audiences.set(key, set);
   }
 
-  return [...groups.values()].map((g) => ({
+  return [...groups.entries()].map(([key, g]) => ({
     ...g,
+    audience: [...(audiences.get(key) ?? new Set<string>())],
     cpl: g.leads ? g.spend / g.leads : 0,
     ctr: g.impressions ? g.clicks / g.impressions : 0,
   }));

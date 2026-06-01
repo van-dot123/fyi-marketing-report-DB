@@ -12,6 +12,8 @@ export interface MetaRow {
   date: string;
   isoWeek: number;
   product: MetaProduct;
+  adName: string;
+  audience: string;
   spend: number;
   leads: number;
   clicks: number;
@@ -21,6 +23,7 @@ export interface MetaRow {
 export interface WeeklyMeta {
   isoWeek: number;
   product: MetaProduct;
+  audience: string[];
   spend: number;
   leads: number;
   clicks: number;
