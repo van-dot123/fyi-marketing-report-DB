@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment } from "react";
+import { Fragment, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
@@ -16,6 +16,7 @@ import { filterByRange, filterWeeks } from "@/lib/mockData";
 import { paidCreatives, paidMetrics, paidRows } from "@/lib/paidData";
 import { funnelWeekly } from "@/lib/funnelData";
 import { PLATFORM_COLORS, contentCards } from "@/lib/snsContent";
+import { supabase } from "@/lib/supabase";
 import { Unit, formatNumber, formatPct, formatPercent, formatValue } from "@/lib/format";
 
 const sum = (nums: number[]) => nums.reduce((a, b) => a + b, 0);
@@ -27,9 +28,17 @@ function wowOf(series: number[]): number {
   return prev ? (series[n - 1] - prev) / prev : 0;
 }
 
-function crColor(cr: number): string {
-  if (cr >= 0.5) return "bg-emerald-50 text-emerald-700";
-  if (cr >= 0.1) return "bg-amber-50 text-amber-700";
+const CR_BENCHMARKS = [
+  { green: 0.03, amber: 0.01 },
+  { green: 0.5, amber: 0.2 },
+  { green: 0.05, amber: 0.02 },
+  { green: 0.3, amber: 0.1 },
+];
+
+function crColor(index: number, cr: number): string {
+  const b = CR_BENCHMARKS[index];
+  if (cr >= b.green) return "bg-emerald-50 text-emerald-700";
+  if (cr >= b.amber) return "bg-amber-50 text-amber-700";
   return "bg-red-50 text-red-700";
 }
 
@@ -61,7 +70,7 @@ function StatCard({
   label: string;
   value: number;
   unit: Unit;
-  wow: number;
+  wow?: number;
 }) {
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -69,9 +78,61 @@ function StatCard({
       <p className="mt-2 text-2xl font-bold text-slate-900">
         {formatValue(value, unit)}
       </p>
-      <div className="mt-2">
-        <WowBadge wow={wow} />
+      {wow !== undefined && (
+        <div className="mt-2">
+          <WowBadge wow={wow} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProductMetrics({ spend }: { spend: number }) {
+  const [status, setStatus] = useState<
+    "loading" | "connecting" | "no-data" | "ready"
+  >("loading");
+  const [count, setCount] = useState(0);
+
+  useEffect(() => {
+    if (!supabase) {
+      setStatus("connecting");
+      return;
+    }
+    let active = true;
+    supabase
+      .from("salary_submissions")
+      .select("*")
+      .then(({ data, error }) => {
+        if (!active) return;
+        if (error || !data) setStatus("connecting");
+        else if (data.length === 0) setStatus("no-data");
+        else {
+          setCount(data.length);
+          setStatus("ready");
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  if (status === "loading") {
+    return (
+      <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-400 shadow-sm">
+        Loading submissions…
       </div>
+    );
+  }
+  if (status !== "ready") return <EmptyState variant={status} />;
+
+  return (
+    <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+      <StatCard label="Submissions" value={count} unit="number" />
+      <StatCard
+        label="Cost per Submission"
+        value={count ? Math.round(spend / count) : 0}
+        unit="currency"
+      />
     </div>
   );
 }
@@ -114,14 +175,8 @@ export default function Overview({ missingKey }: { missingKey: boolean }) {
   const paidSessSeries = weeks.map((w) => Math.round(w.sessions * 0.5));
   const orgSessSeries = weeks.map((w) => Math.round(w.sessions * 0.32));
 
-  const submissionsSeries = funnelWeeks.map((w) => w.submissions);
-  const costPerSubSeries = funnelWeeks.map((w) =>
-    w.submissions ? Math.round(w.spend / w.submissions) : 0
-  );
-  const submissions = sum(submissionsSeries);
+  const submissions = sum(funnelWeeks.map((w) => w.submissions));
   const spend = sum(funnelWeeks.map((w) => w.spend));
-  const costPerSub = submissions ? Math.round(spend / submissions) : 0;
-  const hasProductData = funnelWeeks.length > 0 && submissions > 0;
 
   const stages = [
     { label: "Impressions", value: sum(paid.map((r) => r.impressions)) },
@@ -163,17 +218,7 @@ export default function Overview({ missingKey }: { missingKey: boolean }) {
 
       <section>
         <SectionHead title="Product metrics" href="/funnel" cta="View details" />
-        {hasProductData ? (
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-            <StatCard label="Submissions" value={submissions} unit="number" wow={wowOf(submissionsSeries)} />
-            <StatCard label="Cost per Submission" value={costPerSub} unit="currency" wow={wowOf(costPerSubSeries)} />
-          </div>
-        ) : (
-          <EmptyState
-            title="No submission data"
-            message="Connect Supabase salary_submissions or widen the date range."
-          />
-        )}
+        <ProductMetrics spend={spend} />
       </section>
 
       <section>
@@ -201,7 +246,7 @@ export default function Overview({ missingKey }: { missingKey: boolean }) {
                       <span
                         className={[
                           "rounded-full px-2 py-0.5 text-xs font-semibold",
-                          crColor(cr),
+                          crColor(i, cr),
                         ].join(" ")}
                       >
                         {formatPercent(cr)}
