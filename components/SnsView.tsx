@@ -14,10 +14,10 @@ import {
 } from "recharts";
 import { ArrowDownRight, ArrowUpRight, ChevronDown, ExternalLink } from "lucide-react";
 import EmptyState from "@/components/EmptyState";
+import PostThumbnail from "@/components/PostThumbnail";
 import { useDateRange } from "@/components/DateRangePicker";
 import { SnsPlatform, SnsPostRow } from "@/lib/realData";
 import {
-  PLATFORM_COLORS,
   PlatformTab,
   inRange,
   pillarHeatmap,
@@ -173,11 +173,7 @@ export default function SnsView({ posts }: { posts: SnsPostRow[] }) {
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
           {cards.map((card) => (
             <div key={card.url} className="flex flex-col rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="flex aspect-video w-full items-center justify-center rounded-lg bg-slate-100">
-                <span className="flex h-10 w-10 items-center justify-center rounded-xl text-lg font-bold text-white" style={{ backgroundColor: PLATFORM_COLORS[card.platform] }}>
-                  {card.platform[0]}
-                </span>
-              </div>
+              <PostThumbnail url={card.url} platform={card.platform} />
               <div className="mt-3 flex items-center justify-between">
                 <span className="inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700">{card.pillar}</span>
                 <a href={card.url} className="text-purple-600 hover:text-purple-700" aria-label="Open post"><ExternalLink className="h-4 w-4" /></a>
