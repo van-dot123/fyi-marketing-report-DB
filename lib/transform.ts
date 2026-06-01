@@ -12,10 +12,12 @@ import {
 const META_COLS = {
   date: 3,
   product: 18,
-  spend: 19,
-  leads: 20,
-  clicks: 21,
-  impressions: 22,
+  ad_name: 2,
+  impressions: 5,
+  spend: 9,
+  clicks: 11,
+  leads: 14,
+  audience: 22,
 };
 
 const SNS_COLS = {
