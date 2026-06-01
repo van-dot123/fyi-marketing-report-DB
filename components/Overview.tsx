@@ -65,7 +65,7 @@ function StatCard({ label, value, unit, wow }: { label: string; value: number; u
   );
 }
 
-function ProductMetrics({ spend, start, end }: { spend: number; start: string; end: string }) {
+function ProductMetrics({ spend }: { spend: number }) {
   const [status, setStatus] = useState<"loading" | "connecting" | "no-data" | "ready">("loading");
   const [count, setCount] = useState(0);
 
@@ -79,8 +79,6 @@ function ProductMetrics({ spend, start, end }: { spend: number; start: string; e
     supabase
       .from("salary_submissions")
       .select("*", { count: "exact", head: true })
-      .gte("created_at", `${start}T00:00:00`)
-      .lte("created_at", `${end}T23:59:59`)
       .then(({ count: rows, error }) => {
         if (!active) return;
         if (error) setStatus("connecting");
@@ -95,7 +93,7 @@ function ProductMetrics({ spend, start, end }: { spend: number; start: string; e
     return () => {
       active = false;
     };
-  }, [start, end]);
+  }, []);
 
   if (status === "loading") {
     return <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-400 shadow-sm">Loading submissions…</div>;
@@ -199,7 +197,7 @@ export default function Overview({
 
       <section>
         <SectionHead title="Product metrics" href="/funnel" cta="View details" />
-        <ProductMetrics spend={spend} start={start} end={end} />
+        <ProductMetrics spend={spend} />
       </section>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
