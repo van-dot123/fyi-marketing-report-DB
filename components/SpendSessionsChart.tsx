@@ -13,9 +13,9 @@ import {
   YAxis,
 } from "recharts";
 import { RefreshCw } from "lucide-react";
-import { annotations, weekly } from "@/lib/mockData";
+import { annotations, WeeklyPoint } from "@/lib/mockData";
 
-export default function SpendSessionsChart() {
+export default function SpendSessionsChart({ data }: { data: WeeklyPoint[] }) {
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
       <div className="mb-6 flex items-center justify-between">
@@ -36,7 +36,7 @@ export default function SpendSessionsChart() {
       <div className="h-80 w-full">
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart
-            data={weekly}
+            data={data}
             margin={{ top: 20, right: 16, bottom: 0, left: 0 }}
           >
             <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
