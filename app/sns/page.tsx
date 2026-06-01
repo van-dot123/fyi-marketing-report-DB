@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import {
+  Bar,
   CartesianGrid,
+  ComposedChart,
   Legend,
   Line,
-  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -23,18 +24,14 @@ import {
   RealPlatform,
   SnsPlatform,
   contentCards,
-  dailyViews,
   heatmapMax,
   pillarHeatmap,
+  rangeFraction,
   snsContentMetrics,
-  viewsBreakdown,
+  weeklyContent,
 } from "@/lib/snsContent";
+import { useDateRange } from "@/components/DateRangePicker";
 import { formatNumber, formatPct, formatValue } from "@/lib/format";
-
-const LINES = [
-  { key: "total", label: "Total views", color: "#7c3aed" },
-  { key: "organic", label: "Organic views", color: "#2563eb" },
-] as const;
 
 function fmtDay(iso: string): string {
   return new Date(iso).toLocaleDateString("en-GB", {
@@ -66,7 +63,7 @@ function PlatformThumb({ platform }: { platform: RealPlatform }) {
   return (
     <div className="flex aspect-video w-full items-center justify-center rounded-lg bg-slate-100">
       <span
-        className="flex h-12 w-12 items-center justify-center rounded-xl text-xl font-bold text-white"
+        className="flex h-10 w-10 items-center justify-center rounded-xl text-lg font-bold text-white"
         style={{ backgroundColor: PLATFORM_COLORS[platform] }}
       >
         {platform[0]}
@@ -81,18 +78,20 @@ interface Cell {
 }
 
 export default function SnsPage() {
+  const { start, end } = useDateRange();
   const [platform, setPlatform] = useState<SnsPlatform>("All");
   const [content, setContent] = useState<ContentType>("All");
   const [activeMetric, setActiveMetric] = useState("views");
   const [cell, setCell] = useState<Cell | null>(null);
 
-  const metrics = snsContentMetrics(platform, content);
-  const daily = dailyViews(platform, content);
-  const breakdown = viewsBreakdown(platform, content);
+  const metrics = snsContentMetrics(platform, content, start, end);
+  const weekly = weeklyContent(platform, content, start, end);
+  const fraction = rangeFraction(start, end);
 
   const cards = contentCards
     .filter((c) => platform === "All" || c.platform === platform)
     .filter((c) => content === "All" || c.type === content)
+    .filter((c) => c.date >= start && c.date <= end)
     .filter((c) => !cell || (c.pillar === cell.pillar && c.platform === cell.platform))
     .sort((a, b) => b.views - a.views)
     .slice(0, 4);
@@ -170,11 +169,11 @@ export default function SnsPage() {
       <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
         <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-2">
           <h2 className="mb-5 text-lg font-semibold text-slate-900">
-            Views over time
+            Interactions &amp; Views by Week
           </h2>
           <div className="h-80 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={daily} margin={{ top: 10, right: 16, bottom: 0, left: 0 }}>
+              <ComposedChart data={weekly} margin={{ top: 10, right: 16, bottom: 0, left: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
                 <XAxis
                   dataKey="date"
@@ -182,9 +181,16 @@ export default function SnsPage() {
                   axisLine={false}
                   tick={{ fill: "#64748b", fontSize: 12 }}
                   tickFormatter={fmtDay}
-                  interval={4}
                 />
                 <YAxis
+                  yAxisId="left"
+                  tickLine={false}
+                  axisLine={false}
+                  tick={{ fill: "#64748b", fontSize: 12 }}
+                />
+                <YAxis
+                  yAxisId="right"
+                  orientation="right"
                   tickLine={false}
                   axisLine={false}
                   tick={{ fill: "#64748b", fontSize: 12 }}
@@ -196,68 +202,61 @@ export default function SnsPage() {
                   contentStyle={{ borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12 }}
                 />
                 <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
-                {LINES.map((l) => (
-                  <Line
-                    key={l.key}
-                    type="monotone"
-                    dataKey={l.key}
-                    name={l.label}
-                    stroke={l.color}
-                    strokeWidth={2.5}
-                    dot={false}
-                    activeDot={{ r: 4 }}
-                  />
-                ))}
-              </LineChart>
+                <Bar
+                  yAxisId="left"
+                  dataKey="interactions"
+                  name="Interactions"
+                  fill="#7c3aed"
+                  radius={[4, 4, 0, 0]}
+                  barSize={36}
+                  isAnimationActive
+                  animationDuration={900}
+                />
+                <Line
+                  yAxisId="right"
+                  type="monotone"
+                  dataKey="views"
+                  name="Views"
+                  stroke="#14b8a6"
+                  strokeWidth={2.5}
+                  dot={{ r: 3 }}
+                  isAnimationActive
+                  animationDuration={900}
+                />
+              </ComposedChart>
             </ResponsiveContainer>
           </div>
         </section>
 
-        <div className="space-y-6">
-          <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h2 className="text-lg font-semibold text-slate-900">Views breakdown</h2>
-            <p className="mt-1 text-sm text-slate-400">
-              {fmtDay(breakdown.start)} – {fmtDay(breakdown.end)} 2026
-            </p>
-            <div className="mt-4 space-y-4">
-              {breakdown.items.map((item) => (
-                <div key={item.label}>
-                  <p className="text-sm text-slate-500">{item.label}</p>
-                  <div className="mt-0.5 flex items-baseline justify-between">
-                    <span className="text-xl font-bold text-slate-900">
-                      {formatNumber(item.value)}
-                    </span>
-                    <WowBadge wow={item.wow} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
+        <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+          <h2 className="text-lg font-semibold text-slate-900">
+            Pillar performance
+          </h2>
+          <p className="mt-1 text-xs text-slate-400">
+            Views by pillar × platform — click a cell to filter posts
+          </p>
+          <div
+            className="mt-4 grid items-center gap-1 text-xs"
+            style={{ gridTemplateColumns: "auto repeat(3, 1fr)" }}
+          >
+            <div />
+            {HEATMAP_COLS.map((c) => (
+              <div key={c.platform} className="pb-1 text-center font-medium text-slate-400">
+                {c.label}
+              </div>
+            ))}
 
-          <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h2 className="text-lg font-semibold text-slate-900">
-              Pillar performance
-            </h2>
-            <p className="mt-1 text-xs text-slate-400">
-              Views by pillar × platform — click a cell to filter posts
-            </p>
-            <div
-              className="mt-4 grid items-center gap-1 text-xs"
-              style={{ gridTemplateColumns: "auto repeat(3, 1fr)" }}
-            >
-              <div />
-              {HEATMAP_COLS.map((c) => (
-                <div key={c.platform} className="pb-1 text-center font-medium text-slate-400">
-                  {c.label}
-                </div>
-              ))}
-
-              {PILLARS.map((pillar) => (
-                <FragmentRow key={pillar} pillar={pillar} cell={cell} onPick={toggleCell} />
-              ))}
-            </div>
-          </section>
-        </div>
+            {PILLARS.map((pillar) => (
+              <HeatmapRow
+                key={pillar}
+                pillar={pillar}
+                fraction={fraction}
+                cell={cell}
+                onPick={toggleCell}
+              />
+            ))}
+          </div>
+        </section>
       </div>
 
       <section className="mt-6">
@@ -274,11 +273,11 @@ export default function SnsPage() {
             </button>
           )}
         </div>
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
           {cards.map((card) => (
             <div
               key={card.id}
-              className="flex flex-col rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+              className="flex flex-col rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
             >
               <PlatformThumb platform={card.platform} />
               <div className="mt-3 flex items-center justify-between">
@@ -287,16 +286,12 @@ export default function SnsPage() {
                 </span>
                 <span className="text-xs text-slate-400">{fmtDay(card.date)} 2026</span>
               </div>
-              <p className="mt-2 line-clamp-2 text-sm font-medium text-slate-800">
+              <p className="mt-2 line-clamp-1 text-sm font-medium text-slate-800">
                 {card.caption}
               </p>
-              <div className="mt-3 flex items-center gap-6 border-t border-slate-50 pt-3 text-sm">
-                <span className="text-slate-500">
-                  👁 {formatNumber(card.views)} views
-                </span>
-                <span className="font-medium text-slate-800">
-                  ❤ {formatNumber(card.interactions)}
-                </span>
+              <div className="mt-3 flex items-center gap-4 border-t border-slate-50 pt-3 text-xs">
+                <span className="text-slate-500">👁 {formatNumber(card.views)}</span>
+                <span className="font-medium text-slate-800">❤ {formatNumber(card.interactions)}</span>
               </div>
             </div>
           ))}
@@ -309,12 +304,14 @@ export default function SnsPage() {
   );
 }
 
-function FragmentRow({
+function HeatmapRow({
   pillar,
+  fraction,
   cell,
   onPick,
 }: {
   pillar: Pillar;
+  fraction: number;
   cell: Cell | null;
   onPick: (c: Cell) => void;
 }) {
@@ -330,7 +327,7 @@ function FragmentRow({
           <button
             key={c.platform}
             onClick={() => onPick({ pillar, platform: c.platform })}
-            title={`${pillar} · ${c.label}: ${formatNumber(value)} views`}
+            title={`${pillar} · ${c.label}: ${formatNumber(Math.round(value * fraction))} views`}
             className={[
               "flex h-11 items-center justify-center rounded text-[11px] font-semibold transition-all",
               opacity > 0.55 ? "text-white" : "text-purple-900",
@@ -338,7 +335,7 @@ function FragmentRow({
             ].join(" ")}
             style={{ backgroundColor: `rgba(124, 58, 237, ${opacity.toFixed(2)})` }}
           >
-            {Math.round(value / 1000)}k
+            {Math.round((value * fraction) / 1000)}k
           </button>
         );
       })}

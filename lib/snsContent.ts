@@ -1,3 +1,5 @@
+import { WEEK_DATES, weeksInRange } from "@/lib/mockData";
+
 export type SnsPlatform = "All" | "Facebook" | "Instagram" | "Threads";
 export type ContentType = "All" | "Posts" | "Reels";
 
@@ -48,15 +50,57 @@ const sum = (nums: number[]) => nums.reduce((a, b) => a + b, 0);
 
 export function dailyViews(
   platform: SnsPlatform,
-  content: ContentType
+  content: ContentType,
+  start?: string,
+  end?: string
 ): DailyPoint[] {
   const f = PLATFORM_FACTOR[platform] * CONTENT_FACTOR[content];
-  return RAW_DAILY.map((d) => ({
+  return RAW_DAILY.filter(
+    (d) => (!start || d.date >= start) && (!end || d.date <= end)
+  ).map((d) => ({
     date: d.date,
     total: Math.round(d.total * f),
     organic: Math.round(d.organic * f),
     ads: Math.round(d.ads * f),
   }));
+}
+
+function dateToWeek(iso: string): string | null {
+  for (const w of Object.keys(WEEK_DATES)) {
+    if (iso >= WEEK_DATES[w].start && iso <= WEEK_DATES[w].end) return w;
+  }
+  return null;
+}
+
+export interface WeeklyContent {
+  week: string;
+  date: string;
+  views: number;
+  interactions: number;
+}
+
+export function weeklyContent(
+  platform: SnsPlatform,
+  content: ContentType,
+  start: string,
+  end: string
+): WeeklyContent[] {
+  const daily = dailyViews(platform, content);
+  return weeksInRange(start, end).map((week) => {
+    const views = daily
+      .filter((d) => dateToWeek(d.date) === week)
+      .reduce((s, d) => s + d.total, 0);
+    return {
+      week,
+      date: WEEK_DATES[week].start,
+      views,
+      interactions: Math.round(views * 0.083),
+    };
+  });
+}
+
+export function rangeFraction(start: string, end: string): number {
+  return dailyViews("All", "All", start, end).length / RAW_DAILY.length;
 }
 
 function wow(values: number[]): number {
@@ -79,54 +123,26 @@ export interface SnsMetric {
 
 export function snsContentMetrics(
   platform: SnsPlatform,
-  content: ContentType
+  content: ContentType,
+  start: string,
+  end: string
 ): SnsMetric[] {
-  const daily = dailyViews(platform, content);
+  const daily = dailyViews(platform, content, start, end);
   const views = sum(daily.map((d) => d.total));
   const viewsWow = wow(daily.map((d) => d.total));
   const interactions = Math.round(views * 0.083);
-  const reach = Math.round(views * 0.71);
+  const isThreads = platform === "Threads";
+  const reach = isThreads ? views : Math.round(views * 0.71);
   const er = views ? interactions / views : 0;
   const sessions = Math.round(views * 0.045);
 
   return [
     { key: "views", label: "Views", value: views, unit: "number", wow: viewsWow },
     { key: "interactions", label: "Interactions", value: interactions, unit: "number", wow: 0.09 },
-    { key: "reach", label: "Reach", value: reach, unit: "number", wow: 0.04 },
+    { key: "reach", label: isThreads ? "Views (proxy)" : "Reach", value: reach, unit: "number", wow: 0.04 },
     { key: "er", label: "ER%", value: er, unit: "percent", wow: 0.012 },
     { key: "sessions", label: "Sessions", value: sessions, unit: "number", wow: -0.03 },
   ];
-}
-
-export interface BreakdownItem {
-  label: string;
-  value: number;
-  wow: number;
-}
-
-export interface ViewsBreakdown {
-  start: string;
-  end: string;
-  items: BreakdownItem[];
-}
-
-export function viewsBreakdown(
-  platform: SnsPlatform,
-  content: ContentType
-): ViewsBreakdown {
-  const daily = dailyViews(platform, content);
-  const total = sum(daily.map((d) => d.total));
-  const organic = sum(daily.map((d) => d.organic));
-
-  return {
-    start: daily[0].date,
-    end: daily[daily.length - 1].date,
-    items: [
-      { label: "Total views", value: total, wow: wow(daily.map((d) => d.total)) },
-      { label: "Organic views", value: organic, wow: wow(daily.map((d) => d.organic)) },
-      { label: "Unique viewers", value: Math.round(total * 0.62), wow: wow(daily.map((d) => d.total)) * 0.9 },
-    ],
-  };
 }
 
 export const PILLARS = [
