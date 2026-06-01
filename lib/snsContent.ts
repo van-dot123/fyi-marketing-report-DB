@@ -117,7 +117,6 @@ export function viewsBreakdown(
   const daily = dailyViews(platform, content);
   const total = sum(daily.map((d) => d.total));
   const organic = sum(daily.map((d) => d.organic));
-  const ads = sum(daily.map((d) => d.ads));
 
   return {
     start: daily[0].date,
@@ -125,16 +124,47 @@ export function viewsBreakdown(
     items: [
       { label: "Total views", value: total, wow: wow(daily.map((d) => d.total)) },
       { label: "Organic views", value: organic, wow: wow(daily.map((d) => d.organic)) },
-      { label: "Paid views", value: ads, wow: wow(daily.map((d) => d.ads)) },
       { label: "Unique viewers", value: Math.round(total * 0.62), wow: wow(daily.map((d) => d.total)) * 0.9 },
     ],
   };
 }
 
+export const PILLARS = [
+  "Ask-100",
+  "Data-report",
+  "How-to",
+  "Job-post",
+  "Branding",
+] as const;
+export type Pillar = (typeof PILLARS)[number];
+
+export type RealPlatform = Exclude<SnsPlatform, "All">;
+
+export const HEATMAP_COLS: { platform: RealPlatform; label: string }[] = [
+  { platform: "Facebook", label: "FB" },
+  { platform: "Instagram", label: "IG" },
+  { platform: "Threads", label: "Threads" },
+];
+
+export const pillarHeatmap: Record<Pillar, Record<RealPlatform, number>> = {
+  "Ask-100": { Facebook: 18000, Instagram: 26000, Threads: 14000 },
+  "Data-report": { Facebook: 30000, Instagram: 22000, Threads: 19000 },
+  "How-to": { Facebook: 16000, Instagram: 28000, Threads: 24000 },
+  "Job-post": { Facebook: 24000, Instagram: 17000, Threads: 12000 },
+  Branding: { Facebook: 12000, Instagram: 20000, Threads: 21000 },
+};
+
+export const heatmapMax = Math.max(
+  ...PILLARS.flatMap((pillar) =>
+    HEATMAP_COLS.map((c) => pillarHeatmap[pillar][c.platform])
+  )
+);
+
 export interface ContentCard {
   id: string;
-  platform: Exclude<SnsPlatform, "All">;
+  platform: RealPlatform;
   type: Exclude<ContentType, "All">;
+  pillar: Pillar;
   caption: string;
   date: string;
   views: number;
@@ -144,12 +174,12 @@ export interface ContentCard {
 }
 
 export const contentCards: ContentCard[] = [
-  { id: "c1", platform: "Instagram", type: "Reels", caption: "Why your salary feels underpaid — 3 signs the market moved without you", date: "2026-05-21", views: 41200, interactions: 3420, comments: 412, shares: 980 },
-  { id: "c2", platform: "Facebook", type: "Posts", caption: "We analysed 1,000 VN job posts. The salary gap by industry will surprise you.", date: "2026-05-18", views: 38800, interactions: 2710, comments: 388, shares: 640 },
-  { id: "c3", platform: "Threads", type: "Posts", caption: "Quick tip: negotiate the offer, not the title. Here's the exact script.", date: "2026-05-24", views: 33100, interactions: 3980, comments: 521, shares: 210 },
-  { id: "c4", platform: "Facebook", type: "Reels", caption: "Career pivot at 30? This founder did it in 90 days — full breakdown", date: "2026-05-12", views: 30400, interactions: 2190, comments: 244, shares: 530 },
-  { id: "c5", platform: "Instagram", type: "Posts", caption: "Office culture red flags 🚩 save this before your next interview", date: "2026-05-27", views: 28700, interactions: 3150, comments: 470, shares: 720 },
-  { id: "c6", platform: "Threads", type: "Reels", caption: "K-Tuvi daily reading for the week — what the numbers say about May", date: "2026-05-09", views: 26500, interactions: 4020, comments: 612, shares: 180 },
-  { id: "c7", platform: "Instagram", type: "Reels", caption: "5 résumé mistakes recruiters reject in the first 6 seconds", date: "2026-05-15", views: 24900, interactions: 2640, comments: 333, shares: 410 },
-  { id: "c8", platform: "Facebook", type: "Posts", caption: "Breaking: new labour data shows hiring up 12% across tech in Q2", date: "2026-05-30", views: 21300, interactions: 1180, comments: 156, shares: 290 },
+  { id: "c1", platform: "Instagram", type: "Reels", pillar: "Data-report", caption: "Why your salary feels underpaid — 3 signs the market moved without you", date: "2026-05-21", views: 41200, interactions: 3420, comments: 412, shares: 980 },
+  { id: "c2", platform: "Facebook", type: "Posts", pillar: "Job-post", caption: "We analysed 1,000 VN job posts. The salary gap by industry will surprise you.", date: "2026-05-18", views: 38800, interactions: 2710, comments: 388, shares: 640 },
+  { id: "c3", platform: "Threads", type: "Posts", pillar: "How-to", caption: "Quick tip: negotiate the offer, not the title. Here's the exact script.", date: "2026-05-24", views: 33100, interactions: 3980, comments: 521, shares: 210 },
+  { id: "c4", platform: "Facebook", type: "Reels", pillar: "Branding", caption: "Career pivot at 30? This founder did it in 90 days — full breakdown", date: "2026-05-12", views: 30400, interactions: 2190, comments: 244, shares: 530 },
+  { id: "c5", platform: "Instagram", type: "Posts", pillar: "Ask-100", caption: "Office culture red flags 🚩 save this before your next interview", date: "2026-05-27", views: 28700, interactions: 3150, comments: 470, shares: 720 },
+  { id: "c6", platform: "Threads", type: "Reels", pillar: "Branding", caption: "K-Tuvi daily reading for the week — what the numbers say about May", date: "2026-05-09", views: 26500, interactions: 4020, comments: 612, shares: 180 },
+  { id: "c7", platform: "Instagram", type: "Reels", pillar: "How-to", caption: "5 résumé mistakes recruiters reject in the first 6 seconds", date: "2026-05-15", views: 24900, interactions: 2640, comments: 333, shares: 410 },
+  { id: "c8", platform: "Facebook", type: "Posts", pillar: "Job-post", caption: "Breaking: new labour data shows hiring up 12% across tech in Q2", date: "2026-05-30", views: 21300, interactions: 1180, comments: 156, shares: 290 },
 ];

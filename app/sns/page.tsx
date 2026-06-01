@@ -15,11 +15,17 @@ import { ArrowDownRight, ArrowUpRight, ChevronDown } from "lucide-react";
 import {
   CONTENT_TYPES,
   ContentType,
+  HEATMAP_COLS,
+  PILLARS,
   PLATFORM_COLORS,
   PLATFORM_OPTIONS,
+  Pillar,
+  RealPlatform,
   SnsPlatform,
   contentCards,
   dailyViews,
+  heatmapMax,
+  pillarHeatmap,
   snsContentMetrics,
   viewsBreakdown,
 } from "@/lib/snsContent";
@@ -27,8 +33,7 @@ import { formatNumber, formatPct, formatValue } from "@/lib/format";
 
 const LINES = [
   { key: "total", label: "Total views", color: "#7c3aed" },
-  { key: "organic", label: "From organic", color: "#2563eb" },
-  { key: "ads", label: "From ads", color: "#f59e0b" },
+  { key: "organic", label: "Organic views", color: "#2563eb" },
 ] as const;
 
 function fmtDay(iso: string): string {
@@ -57,15 +62,11 @@ function WowBadge({ wow }: { wow: number }) {
   );
 }
 
-function PlatformThumb({
-  platform,
-}: {
-  platform: "Facebook" | "Instagram" | "Threads";
-}) {
+function PlatformThumb({ platform }: { platform: RealPlatform }) {
   return (
     <div className="flex aspect-video w-full items-center justify-center rounded-lg bg-slate-100">
       <span
-        className="flex h-10 w-10 items-center justify-center rounded-lg text-lg font-bold text-white"
+        className="flex h-12 w-12 items-center justify-center rounded-xl text-xl font-bold text-white"
         style={{ backgroundColor: PLATFORM_COLORS[platform] }}
       >
         {platform[0]}
@@ -74,10 +75,16 @@ function PlatformThumb({
   );
 }
 
+interface Cell {
+  pillar: Pillar;
+  platform: RealPlatform;
+}
+
 export default function SnsPage() {
   const [platform, setPlatform] = useState<SnsPlatform>("All");
   const [content, setContent] = useState<ContentType>("All");
   const [activeMetric, setActiveMetric] = useState("views");
+  const [cell, setCell] = useState<Cell | null>(null);
 
   const metrics = snsContentMetrics(platform, content);
   const daily = dailyViews(platform, content);
@@ -86,7 +93,16 @@ export default function SnsPage() {
   const cards = contentCards
     .filter((c) => platform === "All" || c.platform === platform)
     .filter((c) => content === "All" || c.type === content)
-    .sort((a, b) => b.views - a.views);
+    .filter((c) => !cell || (c.pillar === cell.pillar && c.platform === cell.platform))
+    .sort((a, b) => b.views - a.views)
+    .slice(0, 4);
+
+  const toggleCell = (next: Cell) =>
+    setCell((prev) =>
+      prev && prev.pillar === next.pillar && prev.platform === next.platform
+        ? null
+        : next
+    );
 
   return (
     <>
@@ -197,59 +213,135 @@ export default function SnsPage() {
           </div>
         </section>
 
-        <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-slate-900">Views breakdown</h2>
-          <p className="mt-1 text-sm text-slate-400">
-            {fmtDay(breakdown.start)} – {fmtDay(breakdown.end)} 2026
-          </p>
-
-          <div className="mt-5 space-y-5">
-            {breakdown.items.map((item) => (
-              <div key={item.label}>
-                <p className="text-sm text-slate-500">{item.label}</p>
-                <div className="mt-1 flex items-baseline justify-between">
-                  <span className="text-2xl font-bold text-slate-900">
-                    {formatNumber(item.value)}
-                  </span>
-                  <WowBadge wow={item.wow} />
+        <div className="space-y-6">
+          <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+            <h2 className="text-lg font-semibold text-slate-900">Views breakdown</h2>
+            <p className="mt-1 text-sm text-slate-400">
+              {fmtDay(breakdown.start)} – {fmtDay(breakdown.end)} 2026
+            </p>
+            <div className="mt-4 space-y-4">
+              {breakdown.items.map((item) => (
+                <div key={item.label}>
+                  <p className="text-sm text-slate-500">{item.label}</p>
+                  <div className="mt-0.5 flex items-baseline justify-between">
+                    <span className="text-xl font-bold text-slate-900">
+                      {formatNumber(item.value)}
+                    </span>
+                    <WowBadge wow={item.wow} />
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        </section>
+              ))}
+            </div>
+          </section>
+
+          <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+            <h2 className="text-lg font-semibold text-slate-900">
+              Pillar performance
+            </h2>
+            <p className="mt-1 text-xs text-slate-400">
+              Views by pillar × platform — click a cell to filter posts
+            </p>
+            <div
+              className="mt-4 grid items-center gap-1 text-xs"
+              style={{ gridTemplateColumns: "auto repeat(3, 1fr)" }}
+            >
+              <div />
+              {HEATMAP_COLS.map((c) => (
+                <div key={c.platform} className="pb-1 text-center font-medium text-slate-400">
+                  {c.label}
+                </div>
+              ))}
+
+              {PILLARS.map((pillar) => (
+                <FragmentRow key={pillar} pillar={pillar} cell={cell} onPick={toggleCell} />
+              ))}
+            </div>
+          </section>
+        </div>
       </div>
 
       <section className="mt-6">
-        <h2 className="mb-4 text-lg font-semibold text-slate-900">
-          Top content by views
-        </h2>
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-slate-900">
+            Top content by views
+          </h2>
+          {cell && (
+            <button
+              onClick={() => setCell(null)}
+              className="text-sm font-medium text-purple-600 hover:text-purple-700"
+            >
+              Clear {cell.pillar} · {cell.platform} filter ✕
+            </button>
+          )}
+        </div>
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
           {cards.map((card) => (
             <div
               key={card.id}
-              className="flex flex-col rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+              className="flex flex-col rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
             >
               <PlatformThumb platform={card.platform} />
-              <p className="mt-3 line-clamp-2 text-sm font-medium text-slate-800">
+              <div className="mt-3 flex items-center justify-between">
+                <span className="inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700">
+                  {card.pillar}
+                </span>
+                <span className="text-xs text-slate-400">{fmtDay(card.date)} 2026</span>
+              </div>
+              <p className="mt-2 line-clamp-2 text-sm font-medium text-slate-800">
                 {card.caption}
               </p>
-              <p className="mt-1 text-xs text-slate-400">{fmtDay(card.date)} 2026</p>
-
-              <div className="mt-3 grid grid-cols-2 gap-y-2 border-t border-slate-50 pt-3 text-xs text-slate-500">
-                <span>👁 {formatNumber(card.views)}</span>
-                <span>❤ {formatNumber(card.interactions)}</span>
-                <span>💬 {formatNumber(card.comments)}</span>
-                <span>↗ {formatNumber(card.shares)}</span>
+              <div className="mt-3 flex items-center gap-6 border-t border-slate-50 pt-3 text-sm">
+                <span className="text-slate-500">
+                  👁 {formatNumber(card.views)} views
+                </span>
+                <span className="font-medium text-slate-800">
+                  ❤ {formatNumber(card.interactions)}
+                </span>
               </div>
             </div>
           ))}
           {cards.length === 0 && (
-            <p className="text-sm text-slate-400">
-              No content for this filter.
-            </p>
+            <p className="text-sm text-slate-400">No content for this filter.</p>
           )}
         </div>
       </section>
+    </>
+  );
+}
+
+function FragmentRow({
+  pillar,
+  cell,
+  onPick,
+}: {
+  pillar: Pillar;
+  cell: Cell | null;
+  onPick: (c: Cell) => void;
+}) {
+  return (
+    <>
+      <div className="pr-2 font-medium text-slate-600">{pillar}</div>
+      {HEATMAP_COLS.map((c) => {
+        const value = pillarHeatmap[pillar][c.platform];
+        const opacity = value / heatmapMax;
+        const selected =
+          cell?.pillar === pillar && cell?.platform === c.platform;
+        return (
+          <button
+            key={c.platform}
+            onClick={() => onPick({ pillar, platform: c.platform })}
+            title={`${pillar} · ${c.label}: ${formatNumber(value)} views`}
+            className={[
+              "flex h-11 items-center justify-center rounded text-[11px] font-semibold transition-all",
+              opacity > 0.55 ? "text-white" : "text-purple-900",
+              selected ? "ring-2 ring-purple-600 ring-offset-1" : "",
+            ].join(" ")}
+            style={{ backgroundColor: `rgba(124, 58, 237, ${opacity.toFixed(2)})` }}
+          >
+            {Math.round(value / 1000)}k
+          </button>
+        );
+      })}
     </>
   );
 }
