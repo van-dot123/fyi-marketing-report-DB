@@ -1,7 +1,6 @@
 import MetricCard from "@/components/MetricCard";
 import SpendSessionsChart from "@/components/SpendSessionsChart";
 import CreativePerformance from "@/components/CreativePerformance";
-import AnalysisNotes from "@/components/AnalysisNotes";
 import { metricSummaries } from "@/lib/mockData";
 
 export default function Home() {
@@ -17,9 +16,8 @@ export default function Home() {
         <SpendSessionsChart />
       </div>
 
-      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <div className="mt-6">
         <CreativePerformance />
-        <AnalysisNotes />
       </div>
     </>
   );
