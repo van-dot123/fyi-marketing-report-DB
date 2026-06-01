@@ -7,22 +7,33 @@ import {
   Users,
   Target,
   MousePointerClick,
+  Percent,
+  Eye,
+  Heart,
+  UserPlus,
+  FileText,
   Activity,
 } from "lucide-react";
 import { MetricSummary } from "@/lib/mockData";
-import { formatCurrency, formatNumber, formatPct } from "@/lib/format";
+import { formatValue, formatPct } from "@/lib/format";
 
 const icons: Record<string, LucideIcon> = {
   spend: Wallet,
   leads: Users,
   cpl: Target,
   sessions: MousePointerClick,
+  ctr: Percent,
+  views: Eye,
+  er: Heart,
+  followers: UserPlus,
+  conversions: Target,
+  submissions: FileText,
 };
 
 export default function MetricCard({ metric }: { metric: MetricSummary }) {
   const { key, label, value, unit, series } = metric;
   const Icon = icons[key] ?? Activity;
-  const display = unit === "currency" ? formatCurrency(value) : formatNumber(value);
+  const display = formatValue(value, unit);
 
   const prev = series[series.length - 2] ?? 0;
   const last = series[series.length - 1] ?? 0;

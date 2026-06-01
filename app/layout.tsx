@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import Sidebar from "@/components/Sidebar";
+import PageTitle from "@/components/PageTitle";
 import DateRangePicker, { DateRangeProvider } from "@/components/DateRangePicker";
 
 export const metadata: Metadata = {
@@ -21,7 +22,7 @@ export default function RootLayout({
             <Sidebar />
             <div className="flex flex-1 flex-col overflow-hidden">
               <header className="flex items-center justify-between border-b border-slate-200 bg-white px-8 py-5">
-                <h1 className="text-2xl font-bold text-slate-900">Overview</h1>
+                <PageTitle />
                 <DateRangePicker />
               </header>
               <main className="flex-1 overflow-y-auto px-8 py-6">{children}</main>

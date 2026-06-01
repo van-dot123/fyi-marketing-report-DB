@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   Megaphone,
@@ -11,21 +12,21 @@ import {
 } from "lucide-react";
 
 interface NavItem {
-  key: string;
+  href: string;
   label: string;
   icon: LucideIcon;
 }
 
 const navItems: NavItem[] = [
-  { key: "overview", label: "Overview", icon: LayoutDashboard },
-  { key: "paid", label: "Paid Channel", icon: Megaphone },
-  { key: "organic", label: "Organic SNS", icon: Share2 },
-  { key: "funnel", label: "Funnel", icon: Filter },
-  { key: "alerts", label: "WoW Alerts", icon: BellRing },
+  { href: "/", label: "Overview", icon: LayoutDashboard },
+  { href: "/paid", label: "Paid Channel", icon: Megaphone },
+  { href: "/sns", label: "Organic SNS", icon: Share2 },
+  { href: "/funnel", label: "Funnel", icon: Filter },
+  { href: "/alerts", label: "WoW Alerts", icon: BellRing },
 ];
 
 export default function Sidebar() {
-  const [active, setActive] = useState("overview");
+  const pathname = usePathname();
 
   return (
     <aside className="flex h-full w-60 flex-col bg-[#1a1a2e] px-4 py-6 text-slate-300">
@@ -37,12 +38,13 @@ export default function Sidebar() {
       </div>
 
       <nav className="flex flex-1 flex-col gap-1">
-        {navItems.map(({ key, label, icon: Icon }) => {
-          const isActive = key === active;
+        {navItems.map(({ href, label, icon: Icon }) => {
+          const isActive =
+            href === "/" ? pathname === "/" : pathname.startsWith(href);
           return (
-            <button
-              key={key}
-              onClick={() => setActive(key)}
+            <Link
+              key={href}
+              href={href}
               className={[
                 "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
                 isActive
@@ -52,7 +54,7 @@ export default function Sidebar() {
             >
               <Icon className="h-5 w-5" />
               {label}
-            </button>
+            </Link>
           );
         })}
       </nav>

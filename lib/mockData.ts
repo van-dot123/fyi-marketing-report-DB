@@ -1,7 +1,28 @@
+export const WEEK_DATES: Record<string, { start: string; end: string }> = {
+  W18: { start: "2026-05-01", end: "2026-05-05" },
+  W19: { start: "2026-05-06", end: "2026-05-10" },
+  W20: { start: "2026-05-11", end: "2026-05-17" },
+  W21: { start: "2026-05-18", end: "2026-05-24" },
+  W22: { start: "2026-05-25", end: "2026-05-31" },
+};
+
+export function weeksInRange(start: string, end: string): string[] {
+  return Object.keys(WEEK_DATES).filter(
+    (w) => WEEK_DATES[w].start <= end && WEEK_DATES[w].end >= start
+  );
+}
+
+export function filterByRange<T extends { week: string }>(
+  rows: T[],
+  start: string,
+  end: string
+): T[] {
+  const weeks = new Set(weeksInRange(start, end));
+  return rows.filter((r) => weeks.has(r.week));
+}
+
 export interface WeeklyPoint {
   week: string;
-  start: string;
-  end: string;
   spend: number;
   sessions: number;
   leads: number;
@@ -9,22 +30,24 @@ export interface WeeklyPoint {
 }
 
 export const weekly: WeeklyPoint[] = [
-  { week: "W18", start: "2026-05-01", end: "2026-05-05", spend: 120000, sessions: 1200, leads: 280, cpl: 428 },
-  { week: "W19", start: "2026-05-06", end: "2026-05-10", spend: 145000, sessions: 1650, leads: 320, cpl: 453 },
-  { week: "W20", start: "2026-05-11", end: "2026-05-17", spend: 160000, sessions: 2100, leads: 410, cpl: 390 },
-  { week: "W21", start: "2026-05-18", end: "2026-05-24", spend: 175000, sessions: 2800, leads: 520, cpl: 336 },
-  { week: "W22", start: "2026-05-25", end: "2026-05-31", spend: 155000, sessions: 2400, leads: 480, cpl: 323 },
+  { week: "W18", spend: 120000, sessions: 1200, leads: 280, cpl: 428 },
+  { week: "W19", spend: 145000, sessions: 1650, leads: 320, cpl: 453 },
+  { week: "W20", spend: 160000, sessions: 2100, leads: 410, cpl: 390 },
+  { week: "W21", spend: 175000, sessions: 2800, leads: 520, cpl: 336 },
+  { week: "W22", spend: 155000, sessions: 2400, leads: 480, cpl: 323 },
 ];
 
 export function filterWeeks(start: string, end: string): WeeklyPoint[] {
-  return weekly.filter((w) => w.start <= end && w.end >= start);
+  return filterByRange(weekly, start, end);
 }
 
+export type Unit = "currency" | "number" | "percent";
+
 export interface MetricSummary {
-  key: "spend" | "leads" | "cpl" | "sessions";
+  key: string;
   label: string;
   value: number;
-  unit: "currency" | "number";
+  unit: Unit;
   series: number[];
 }
 
