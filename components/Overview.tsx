@@ -8,7 +8,6 @@ import {
   ArrowRight,
   ArrowUpRight,
 } from "lucide-react";
-import MetricCard from "@/components/MetricCard";
 import SpendSessionsChart from "@/components/SpendSessionsChart";
 import EmptyState from "@/components/EmptyState";
 import { useDateRange } from "@/components/DateRangePicker";
@@ -216,6 +215,9 @@ export default function Overview({ missingKey }: { missingKey: boolean }) {
   const sessionsSeries = weeks.map((w) => w.sessions);
   const paidSessSeries = weeks.map((w) => Math.round(w.sessions * 0.5));
   const orgSessSeries = weeks.map((w) => Math.round(w.sessions * 0.32));
+  const otherSessSeries = weeks.map(
+    (w, i) => w.sessions - paidSessSeries[i] - orgSessSeries[i]
+  );
 
   const submissions = sum(funnelWeeks.map((w) => w.submissions));
   const spend = sum(funnelWeeks.map((w) => w.spend));
@@ -244,17 +246,24 @@ export default function Overview({ missingKey }: { missingKey: boolean }) {
         <SectionHead title="Paid metrics" href="/paid" cta="View details" />
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
           {paidCards.map((metric) => (
-            <MetricCard key={metric.key} metric={metric} />
+            <StatCard
+              key={metric.key}
+              label={metric.label}
+              value={metric.value}
+              unit={metric.unit}
+              wow={wowOf(metric.series)}
+            />
           ))}
         </div>
       </section>
 
       <section>
         <SectionHead title="Traffic metrics" href="/sns" cta="View details" />
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard label="Total Sessions" value={sum(sessionsSeries)} unit="number" wow={wowOf(sessionsSeries)} />
           <StatCard label="Paid Sessions (meta)" value={sum(paidSessSeries)} unit="number" wow={wowOf(paidSessSeries)} />
           <StatCard label="Organic Sessions (SNS)" value={sum(orgSessSeries)} unit="number" wow={wowOf(orgSessSeries)} />
+          <StatCard label="Other Sessions" value={sum(otherSessSeries)} unit="number" wow={wowOf(otherSessSeries)} />
         </div>
       </section>
 
