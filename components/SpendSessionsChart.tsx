@@ -15,7 +15,13 @@ import {
 import { RefreshCw } from "lucide-react";
 import { annotations, WeeklyPoint } from "@/lib/mockData";
 
-export default function SpendSessionsChart({ data }: { data: WeeklyPoint[] }) {
+export default function SpendSessionsChart({
+  data,
+  height = 320,
+}: {
+  data: WeeklyPoint[];
+  height?: number;
+}) {
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
       <div className="mb-6 flex items-center justify-between">
@@ -33,7 +39,7 @@ export default function SpendSessionsChart({ data }: { data: WeeklyPoint[] }) {
         </button>
       </div>
 
-      <div className="h-80 w-full">
+      <div className="w-full" style={{ height }}>
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart
             data={data}
