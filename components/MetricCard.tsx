@@ -1,34 +1,68 @@
-interface MetricCardProps {
-  label: string;
-  value: string;
-  /** Week-over-week percentage change as a fraction (e.g. 0.12 = +12%). */
-  wowChange?: number;
-}
+"use client";
 
-/**
- * Summary metric tile. Flags significant week-over-week swings
- * (|change| > 0.15) per the dashboard data rules.
- */
-export default function MetricCard({ label, value, wowChange }: MetricCardProps) {
-  const isSignificant = wowChange !== undefined && Math.abs(wowChange) > 0.15;
-  const isPositive = (wowChange ?? 0) >= 0;
+import { Line, LineChart, ResponsiveContainer } from "recharts";
+import {
+  LucideIcon,
+  Wallet,
+  Users,
+  Target,
+  MousePointerClick,
+  Activity,
+} from "lucide-react";
+import { MetricSummary } from "@/lib/mockData";
+import { formatCurrency, formatNumber, formatPct } from "@/lib/format";
+
+const icons: Record<string, LucideIcon> = {
+  spend: Wallet,
+  leads: Users,
+  cpl: Target,
+  sessions: MousePointerClick,
+};
+
+export default function MetricCard({ metric }: { metric: MetricSummary }) {
+  const { key, label, value, unit, wow, spark } = metric;
+  const Icon = icons[key] ?? Activity;
+  const display = unit === "currency" ? formatCurrency(value) : formatNumber(value);
+  const positive = wow >= 0;
+  const sparkData = spark.map((v, i) => ({ i, v }));
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-      <p className="text-sm font-medium text-slate-500">{label}</p>
-      <p className="mt-2 text-2xl font-bold text-slate-900">{value}</p>
-      {wowChange !== undefined && (
-        <p
+    <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex items-start justify-between">
+        <p className="text-sm font-medium text-slate-500">{label}</p>
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
+          <Icon className="h-5 w-5" />
+        </div>
+      </div>
+
+      <p className="mt-3 text-2xl font-bold text-slate-900">{display}</p>
+
+      <div className="mt-3 flex items-end justify-between">
+        <span
           className={[
-            "mt-1 text-sm font-medium",
-            isPositive ? "text-emerald-600" : "text-red-600",
-            isSignificant ? "font-bold" : "",
+            "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold",
+            positive
+              ? "bg-emerald-50 text-emerald-600"
+              : "bg-red-50 text-red-600",
           ].join(" ")}
         >
-          {isPositive ? "▲" : "▼"} {(Math.abs(wowChange) * 100).toFixed(1)}% WoW
-          {isSignificant ? " ⚠" : ""}
-        </p>
-      )}
+          {formatPct(wow)} WoW
+        </span>
+
+        <div className="h-9 w-24">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={sparkData}>
+              <Line
+                type="monotone"
+                dataKey="v"
+                stroke={positive ? "#10b981" : "#ef4444"}
+                strokeWidth={2}
+                dot={false}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
     </div>
   );
 }
