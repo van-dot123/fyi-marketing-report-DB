@@ -20,11 +20,16 @@ const icons: Record<string, LucideIcon> = {
 };
 
 export default function MetricCard({ metric }: { metric: MetricSummary }) {
-  const { key, label, value, unit, wow, spark } = metric;
+  const { key, label, value, unit, series } = metric;
   const Icon = icons[key] ?? Activity;
   const display = unit === "currency" ? formatCurrency(value) : formatNumber(value);
+
+  const prev = series[series.length - 2] ?? 0;
+  const last = series[series.length - 1] ?? 0;
+  const wow = prev ? (last - prev) / prev : 0;
   const positive = wow >= 0;
-  const sparkData = spark.map((v, i) => ({ i, v }));
+
+  const sparkData = series.map((v, i) => ({ i, v }));
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">

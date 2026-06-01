@@ -1,24 +1,67 @@
+export interface WeeklyPoint {
+  week: string;
+  spend: number;
+  sessions: number;
+  leads: number;
+  cpl: number;
+}
+
+export const weekly: WeeklyPoint[] = [
+  { week: "W18", spend: 120000, sessions: 1200, leads: 280, cpl: 428 },
+  { week: "W19", spend: 145000, sessions: 1650, leads: 320, cpl: 453 },
+  { week: "W20", spend: 160000, sessions: 2100, leads: 410, cpl: 390 },
+  { week: "W21", spend: 175000, sessions: 2800, leads: 520, cpl: 336 },
+  { week: "W22", spend: 155000, sessions: 2400, leads: 480, cpl: 323 },
+];
+
 export interface MetricSummary {
-  key: string;
+  key: "spend" | "leads" | "cpl" | "sessions";
   label: string;
   value: number;
   unit: "currency" | "number";
-  wow: number;
-  spark: number[];
+  series: number[];
 }
 
-export interface WeeklySpend {
-  week: string;
-  April: number;
-  "K-Tuvi": number;
-  "Job-page": number;
-  sessions: number;
-}
+export const metricSummaries: MetricSummary[] = [
+  {
+    key: "spend",
+    label: "Total Spend",
+    value: 775000,
+    unit: "currency",
+    series: weekly.map((w) => w.spend),
+  },
+  {
+    key: "leads",
+    label: "Leads",
+    value: 1969,
+    unit: "number",
+    series: weekly.map((w) => w.leads),
+  },
+  {
+    key: "cpl",
+    label: "CPL",
+    value: 394,
+    unit: "currency",
+    series: weekly.map((w) => w.cpl),
+  },
+  {
+    key: "sessions",
+    label: "Sessions",
+    value: 10576,
+    unit: "number",
+    series: weekly.map((w) => w.sessions),
+  },
+];
 
 export interface PolicyAnnotation {
   week: string;
   label: string;
 }
+
+export const annotations: PolicyAnnotation[] = [
+  { week: "W20", label: "salary→jobs" },
+  { week: "W22", label: "+rtg:eng" },
+];
 
 export interface TopAd {
   rank: number;
@@ -27,6 +70,12 @@ export interface TopAd {
   cpl: number;
 }
 
+export const topAds: TopAd[] = [
+  { rank: 1, name: "underpaid", leads: 624, cpl: 298 },
+  { rank: 2, name: "static-insight", leads: 511, cpl: 341 },
+  { rank: 3, name: "high-salary", leads: 432, cpl: 405 },
+];
+
 export interface AnalysisNote {
   id: string;
   author: string;
@@ -34,71 +83,17 @@ export interface AnalysisNote {
   date: string;
 }
 
-export const metricSummaries: MetricSummary[] = [
-  {
-    key: "spend",
-    label: "Total Spend",
-    value: 184_320_000,
-    unit: "currency",
-    wow: 0.12,
-    spark: [28, 31, 30, 35, 38, 41, 46],
-  },
-  {
-    key: "leads",
-    label: "Leads",
-    value: 1_284,
-    unit: "number",
-    wow: 0.08,
-    spark: [160, 172, 168, 190, 205, 198, 221],
-  },
-  {
-    key: "cpl",
-    label: "CPL",
-    value: 143_500,
-    unit: "currency",
-    wow: -0.03,
-    spark: [152, 149, 151, 147, 145, 146, 143],
-  },
-  {
-    key: "sessions",
-    label: "Sessions",
-    value: 42_910,
-    unit: "number",
-    wow: 0.21,
-    spark: [5200, 5600, 5400, 6100, 6800, 7200, 8600],
-  },
-];
-
-export const weeklySpend: WeeklySpend[] = [
-  { week: "W18", April: 18, "K-Tuvi": 12, "Job-page": 8, sessions: 6200 },
-  { week: "W19", April: 21, "K-Tuvi": 14, "Job-page": 9, sessions: 6900 },
-  { week: "W20", April: 24, "K-Tuvi": 11, "Job-page": 13, sessions: 8100 },
-  { week: "W21", April: 22, "K-Tuvi": 16, "Job-page": 12, sessions: 8800 },
-  { week: "W22", April: 27, "K-Tuvi": 18, "Job-page": 15, sessions: 9600 },
-];
-
-export const policyAnnotations: PolicyAnnotation[] = [
-  { week: "W20", label: "Meta policy update" },
-  { week: "W22", label: "New creative batch" },
-];
-
-export const topAds: TopAd[] = [
-  { rank: 1, name: "April — Lunar Reading Carousel", leads: 312, cpl: 118_000 },
-  { rank: 2, name: "K-Tuvi — Daily Horoscope Reel", leads: 274, cpl: 131_500 },
-  { rank: 3, name: "Job-page — Hiring Now Story", leads: 198, cpl: 152_000 },
-];
-
 export const analysisNotes: AnalysisNote[] = [
   {
     id: "n1",
-    author: "Marketing",
-    text: "Sessions spike in W22 correlates with the new creative batch launch.",
+    author: "Performance",
+    text: "W22 dip across spend & sessions after the +rtg:eng retargeting shift.",
     date: "2026-05-28",
   },
   {
     id: "n2",
-    author: "Performance",
-    text: "CPL trending down across all products — keep scaling April budget.",
+    author: "Marketing",
+    text: "CPL trending down since W19 — salary→jobs pivot in W20 improved efficiency.",
     date: "2026-05-25",
   },
 ];
