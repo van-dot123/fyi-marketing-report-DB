@@ -164,13 +164,36 @@ function Wow({ value, previous, periodLabel }: { value: number | null; previous:
   );
 }
 
-function DonutBlock({ title, data, total }: { title: string; data: { name: string; value: number; color: string }[]; total: number }) {
+interface Seg {
+  name: string;
+  value: number;
+  color: string;
+  rows: { name: string; value: number }[];
+}
+
+function DonutTooltip({ active, payload }: any) {
+  if (!active || !payload || !payload.length) return null;
+  const seg = payload[0].payload as Seg;
+  return (
+    <div style={{ background: "#ffffff", border: "0.5px solid #cbd5e1", borderRadius: 6, padding: "8px 10px", fontSize: 11 }}>
+      <p className="mb-1 font-medium text-slate-700">{seg.name}</p>
+      {(seg.rows ?? []).map((r) => (
+        <div key={r.name} className="flex justify-between gap-4">
+          <span className="text-slate-500">{r.name}</span>
+          <span className="font-bold tabular-nums text-slate-800">{formatNumber(r.value)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DonutBlock({ data, total }: { data: Seg[]; total: number }) {
   return (
     <div>
-      <p className="mb-2 text-center text-[10px] font-medium uppercase tracking-[0.06em] text-slate-400">{title}</p>
       <div className="mx-auto" style={{ width: 120, height: 120 }}>
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
+            <Tooltip content={<DonutTooltip />} cursor={false} />
             <Pie data={data} dataKey="value" nameKey="name" innerRadius={36} outerRadius={56} paddingAngle={2} stroke="none">
               {data.map((d) => (
                 <Cell key={d.name} fill={d.color} />
@@ -352,24 +375,86 @@ export default function Overview({ meta, ga4, sns, missingKey }: { meta: MetaDay
     "Budget ₩": t.spend,
   };
 
-  const donut = [
-    { name: "Paid (Meta)", value: traffic.paid, color: "#7F77DD" },
-    { name: "Organic SNS", value: traffic.organic, color: "#1D9E75" },
-    { name: "Direct & other", value: traffic.other, color: "#94a3b8" },
-  ];
-
   const sumClicks = (ds: MetaDay[]) => ds.reduce((a, d) => a + d.clicks, 0);
   const salaryClicks = sumClicks(filterByCampaign(days, "Salary Page"));
   const jobClicks = sumClicks(filterByCampaign(days, "Job Page"));
   const clickDenom = salaryClicks + jobClicks;
-  const salarySessions = clickDenom ? Math.round((traffic.paid * salaryClicks) / clickDenom) : 0;
+  const salaryRatio = clickDenom ? salaryClicks / clickDenom : 0;
+  const jobRatio = clickDenom ? jobClicks / clickDenom : 0;
+  const salarySessions = Math.round(traffic.paid * salaryRatio);
   const jobSessions = clickDenom ? traffic.paid - salarySessions : 0;
   const otherSessions = Math.max(0, traffic.total - traffic.paid);
 
-  const sessionPie = [
-    { name: "Salary page", value: salarySessions, color: "#7F77DD" },
-    { name: "Job page", value: jobSessions, color: "#1D9E75" },
-    { name: "Other", value: otherSessions, color: "#94a3b8" },
+  const sessBySource = new Map<string, number>();
+  for (const d of ga4Days) sessBySource.set(d.source, (sessBySource.get(d.source) ?? 0) + d.sessions);
+  const srcVal = (s: string) => sessBySource.get(s) ?? 0;
+  const directS = srcVal("direct");
+  const referralS = srcVal("referral");
+  const otherBucket = Math.max(0, traffic.other - directS - referralS);
+  const topSources = [...sessBySource.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([name, value]) => ({ name, value }));
+
+  const clicksOf = (p: string) => days.filter((d) => d.product === p).reduce((a, d) => a + d.clicks, 0);
+  const aprC = clicksOf("April");
+  const ktC = clicksOf("K-Tuvi");
+  const jpC = clicksOf("Job-page");
+  const prodDenom = aprC + ktC + jpC || 1;
+  const paidProd = (c: number) => Math.round((traffic.paid * c) / prodDenom);
+
+  const sessionDonut: Seg[] = [
+    {
+      name: "Salary page",
+      value: salarySessions,
+      color: "#7F77DD",
+      rows: [
+        { name: "Paid", value: Math.round(traffic.paid * salaryRatio) },
+        { name: "Organic SNS", value: Math.round(traffic.organic * salaryRatio) },
+        { name: "Direct", value: Math.round(directS * salaryRatio) },
+      ],
+    },
+    {
+      name: "Job page",
+      value: jobSessions,
+      color: "#1D9E75",
+      rows: [
+        { name: "Paid", value: Math.round(traffic.paid * jobRatio) },
+        { name: "Organic SNS", value: Math.round(traffic.organic * jobRatio) },
+        { name: "Direct", value: Math.round(directS * jobRatio) },
+      ],
+    },
+    { name: "Other", value: otherSessions, color: "#94a3b8", rows: topSources },
+  ];
+
+  const trafficDonut: Seg[] = [
+    {
+      name: "Paid (Meta)",
+      value: traffic.paid,
+      color: "#7F77DD",
+      rows: [
+        { name: "April", value: paidProd(aprC) },
+        { name: "K-Tuvi", value: paidProd(ktC) },
+        { name: "Job-page", value: paidProd(jpC) },
+      ],
+    },
+    {
+      name: "Organic SNS",
+      value: traffic.organic,
+      color: "#1D9E75",
+      rows: [
+        { name: "Threads", value: srcVal("threads") },
+        { name: "Facebook", value: srcVal("facebook") },
+        { name: "Instagram", value: srcVal("instagram") },
+      ],
+    },
+    {
+      name: "Direct & other",
+      value: traffic.other,
+      color: "#94a3b8",
+      rows: [
+        { name: "Direct", value: directS },
+        { name: "Referral", value: referralS },
+        { name: "Other", value: otherBucket },
+      ],
+    },
   ];
 
   const stages = [
@@ -543,12 +628,14 @@ export default function Overview({ meta, ga4, sns, missingKey }: { meta: MetaDay
             </table>
           </Card>
 
-          <Card label="Traffic & Sessions">
-            <div className="grid grid-cols-2 gap-4">
-              <DonutBlock title="Traffic" data={donut} total={traffic.total} />
-              <DonutBlock title="Sessions by page" data={sessionPie} total={traffic.total} />
-            </div>
-          </Card>
+          <div className="grid gap-2.5" style={{ gridTemplateColumns: "1fr 1fr" }}>
+            <Card label="Sessions by page">
+              <DonutBlock data={sessionDonut} total={traffic.total} />
+            </Card>
+            <Card label="Traffic breakdown">
+              <DonutBlock data={trafficDonut} total={traffic.total} />
+            </Card>
+          </div>
 
           <Card label="Funnel snapshot" link={{ href: "/funnel", text: "View full funnel" }}>
             <div className="space-y-1.5">
