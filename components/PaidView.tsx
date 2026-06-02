@@ -102,6 +102,25 @@ function spendByDay(days: MetaDay[]): Map<string, number> {
   return m;
 }
 
+function dayMs(iso: string): number {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d).getTime();
+}
+
+function fmtTick(ms: number): string {
+  return new Date(ms).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+}
+
+function dayStartISO(iso: string): string {
+  return new Date(`${iso}T00:00:00`).toISOString();
+}
+
+function dayEndISO(iso: string): string {
+  const d = new Date(`${iso}T00:00:00`);
+  d.setHours(23, 59, 59, 999);
+  return d.toISOString();
+}
+
 function achievement(actual: number, target: number, lowerBetter: boolean): number {
   if (lowerBetter) return actual > 0 ? (target / actual) * 100 : 100;
   return target > 0 ? (actual / target) * 100 : 0;
@@ -198,10 +217,10 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
     }
     let active = true;
     setDbStatus("loading");
-    const lo = `${start}T00:00:00`;
-    const hi = `${end}T23:59:59`;
-    const plo = `${previousStart}T00:00:00`;
-    const phi = `${previousEnd}T23:59:59`;
+    const lo = dayStartISO(start);
+    const hi = dayEndISO(end);
+    const plo = dayStartISO(previousStart);
+    const phi = dayEndISO(previousEnd);
     Promise.all([
       supabase.from("submissions").select("created_at, source").gte("created_at", lo).lte("created_at", hi),
       supabase.from("job_applications").select("created_at").gte("created_at", lo).lte("created_at", hi),
@@ -306,12 +325,16 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
   };
 
   const dates = useMemo(() => eachDay(start, end), [start, end]);
+  const startMs = dayMs(start);
+  const endMs = dayMs(end);
   const chartData = useMemo(() => {
     const sm = spendByDay(filterByCampaign(days, campaign));
     const subM = countByDay(paidSubDates);
     const jobM = countByDay(jobs);
-    return dates.map((d) => ({ date: d, spend: sm.get(d) ?? 0, submissions: subM.get(d) ?? 0, jobApps: jobM.get(d) ?? 0 }));
-  }, [dates, days, campaign, paidSubDates, jobs]);
+    return dates
+      .map((d) => ({ ts: dayMs(d), date: d, spend: sm.get(d) ?? 0, submissions: subM.get(d) ?? 0, jobApps: jobM.get(d) ?? 0 }))
+      .filter((p) => p.ts >= startMs && p.ts <= endMs);
+  }, [dates, days, campaign, paidSubDates, jobs, startMs, endMs]);
 
   const rangeNotes = notes.filter((n) => n.date >= start && n.date <= end);
 
@@ -423,10 +446,10 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={chartData} margin={{ top: 16, right: 8, bottom: 0, left: -8 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" strokeWidth={0.5} vertical={false} />
-                <XAxis dataKey="date" tickFormatter={formatDateShort} tickLine={false} axisLine={false} minTickGap={24} tick={{ fill: "#94a3b8", fontSize: 10 }} />
+                <XAxis dataKey="ts" type="number" scale="time" domain={[startMs, endMs]} tickFormatter={fmtTick} tickLine={false} axisLine={false} minTickGap={24} tick={{ fill: "#94a3b8", fontSize: 10 }} />
                 <YAxis yAxisId="left" tickLine={false} axisLine={false} tick={{ fill: "#94a3b8", fontSize: 10 }} />
                 <YAxis yAxisId="right" orientation="right" tickLine={false} axisLine={false} tick={{ fill: "#94a3b8", fontSize: 10 }} />
-                <Tooltip labelFormatter={(d) => formatDateShort(String(d))} contentStyle={{ borderRadius: 8, border: "0.5px solid #e2e8f0", fontSize: 11 }} />
+                <Tooltip labelFormatter={(d) => fmtTick(Number(d))} contentStyle={{ borderRadius: 8, border: "0.5px solid #e2e8f0", fontSize: 11 }} />
                 <Bar yAxisId="left" dataKey="spend" name="Spend" fill="#cbd5e1" radius={[3, 3, 0, 0]} barSize={14} />
                 <Line yAxisId="right" type="monotone" dataKey="submissions" name="Submissions" stroke="#7c3aed" strokeWidth={2} dot={false} />
                 <Line yAxisId="right" type="monotone" dataKey="jobApps" name="Job apps" stroke="#14b8a6" strokeWidth={2} strokeDasharray="5 4" dot={false} />
@@ -434,7 +457,7 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
                   <ReferenceLine
                     key={`${n.date}-${i}`}
                     yAxisId="left"
-                    x={n.date}
+                    x={dayMs(n.date)}
                     stroke={markerColor(n.campaign)}
                     strokeDasharray="4 4"
                     label={{ value: markerLabel(n.note), position: "top", fontSize: 9, fill: markerColor(n.campaign) }}
