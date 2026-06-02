@@ -74,6 +74,34 @@ function dayEndISO(iso: string): string {
   return d.toISOString();
 }
 
+async function fetchDates(table: string, lo: string, hi: string): Promise<string[] | null> {
+  if (!supabase) return null;
+  const out: string[] = [];
+  const size = 1000;
+  let from = 0;
+  for (;;) {
+    const { data, error } = await supabase
+      .from(table)
+      .select("created_at")
+      .gte("created_at", lo)
+      .lte("created_at", hi)
+      .order("created_at", { ascending: true })
+      .range(from, from + size - 1);
+    if (error) return null;
+    const rows = data ?? [];
+    for (const r of rows) out.push(String((r as any).created_at).slice(0, 10));
+    if (rows.length < size) break;
+    from += size;
+  }
+  return out;
+}
+
+async function countInRange(table: string, lo: string, hi: string): Promise<number> {
+  if (!supabase) return 0;
+  const { count, error } = await supabase.from(table).select("*", { count: "exact", head: true }).gte("created_at", lo).lte("created_at", hi);
+  return error ? 0 : count ?? 0;
+}
+
 function eachDay(start: string, end: string): string[] {
   const out: string[] = [];
   const [sy, sm, sd] = start.split("-").map(Number);
@@ -247,37 +275,28 @@ export default function Overview({ meta, ga4, sns, missingKey }: { meta: MetaDay
     const hi = dayEndISO(end);
     const plo = dayStartISO(previousStart);
     const phi = dayEndISO(previousEnd);
-    Promise.all([
-      supabase.from("submissions").select("created_at, source").gte("created_at", lo).lte("created_at", hi),
-      supabase.from("job_applications").select("created_at").gte("created_at", lo).lte("created_at", hi),
-      supabase.from("submissions").select("*", { count: "exact", head: true }).gte("created_at", plo).lte("created_at", phi),
-      supabase.from("job_applications").select("*", { count: "exact", head: true }).gte("created_at", plo).lte("created_at", phi),
-    ]).then(([s, j, ps, pj]) => {
-      if (!active || s.error || j.error) return;
-      const subRows = (s.data ?? []).map((r: any) => String(r.created_at).slice(0, 10));
-      const jobRows = (j.data ?? []).map((r: any) => String(r.created_at).slice(0, 10));
-      console.log(`[overview] submissions rows: ${subRows.length}`);
-      console.log(`[overview] job_applications rows: ${jobRows.length}`);
-      setSubs(subRows);
-      setJobs(jobRows);
-      setPrevSubs(ps.count ?? 0);
-      setPrevJobs(pj.count ?? 0);
-    });
-    supabase
-      .from("user_profiles")
-      .select("created_at")
-      .gte("created_at", lo)
-      .lte("created_at", hi)
-      .then(({ data, error }) => {
-        if (!active) return;
-        if (error) {
-          setSignups(null);
-          return;
-        }
-        const rows = (data ?? []).map((r: any) => String(r.created_at).slice(0, 10));
-        console.log(`[overview] user_profiles rows: ${rows.length}`);
-        setSignups(rows);
-      });
+    (async () => {
+      const [s, j, u, ps, pj] = await Promise.all([
+        fetchDates("submissions", lo, hi),
+        fetchDates("job_applications", lo, hi),
+        fetchDates("user_profiles", lo, hi),
+        countInRange("submissions", plo, phi),
+        countInRange("job_applications", plo, phi),
+      ]);
+      if (!active) return;
+      if (s) {
+        console.log(`[overview] submissions rows: ${s.length}`);
+        setSubs(s);
+      }
+      if (j) {
+        console.log(`[overview] job_applications rows: ${j.length}`);
+        setJobs(j);
+      }
+      console.log(`[overview] user_profiles rows: ${u ? u.length : "error"}`);
+      setSignups(u);
+      setPrevSubs(ps);
+      setPrevJobs(pj);
+    })();
     return () => {
       active = false;
     };
