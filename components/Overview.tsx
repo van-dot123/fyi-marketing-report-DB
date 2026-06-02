@@ -23,7 +23,6 @@ import { Ga4Day, MetaDay, SnsPostRow } from "@/lib/realData";
 import { PLATFORM_COLORS, filterByCampaign, inRange, metaTotals, paidCreatives, trafficTotals } from "@/lib/aggregate";
 import { formatKRW, formatNumber, formatPercent, formatPeriod } from "@/lib/format";
 
-const PAID_SOURCES = ["MT", "meta"];
 const TARGETS_KEY = "fyi-monthly-targets";
 const LOG_TYPES = ["Paid", "SNS", "Product"] as const;
 const TYPE_COLOR: Record<string, string> = { Paid: "#BA7517", SNS: "#1D9E75", Product: "#534AB7" };
@@ -251,7 +250,7 @@ export default function Overview({ meta, ga4, sns, missingKey }: { meta: MetaDay
     Promise.all([
       supabase.from("submissions").select("created_at, source").gte("created_at", lo).lte("created_at", hi),
       supabase.from("job_applications").select("created_at").gte("created_at", lo).lte("created_at", hi),
-      supabase.from("submissions").select("*", { count: "exact", head: true }).in("source", PAID_SOURCES).gte("created_at", plo).lte("created_at", phi),
+      supabase.from("submissions").select("*", { count: "exact", head: true }).gte("created_at", plo).lte("created_at", phi),
       supabase.from("job_applications").select("*", { count: "exact", head: true }).gte("created_at", plo).lte("created_at", phi),
     ]).then(([s, j, ps, pj]) => {
       if (!active || s.error || j.error) return;
@@ -265,7 +264,7 @@ export default function Overview({ meta, ga4, sns, missingKey }: { meta: MetaDay
       setPrevJobs(pj.count ?? 0);
     });
     supabase
-      .from("sign_ups")
+      .from("user_profiles")
       .select("created_at")
       .gte("created_at", lo)
       .lte("created_at", hi)
@@ -276,7 +275,7 @@ export default function Overview({ meta, ga4, sns, missingKey }: { meta: MetaDay
           return;
         }
         const rows = (data ?? []).map((r: any) => String(r.created_at).slice(0, 10));
-        console.log(`[overview] sign_ups rows: ${rows.length}`);
+        console.log(`[overview] user_profiles rows: ${rows.length}`);
         setSignups(rows);
       });
     return () => {
