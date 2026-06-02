@@ -164,17 +164,32 @@ function Wow({ value, previous, periodLabel }: { value: number | null; previous:
   );
 }
 
-function ProgressRow({ label, value, total, color }: { label: string; value: number; total: number; color: string }) {
-  const pct = total ? (value / total) * 100 : 0;
+function DonutBlock({ title, data, total }: { title: string; data: { name: string; value: number; color: string }[]; total: number }) {
   return (
-    <div className="flex items-center gap-2.5">
-      <span className="w-20 shrink-0 text-[11px] text-slate-500">{label}</span>
-      <div className="h-1.5 flex-1 rounded-full bg-slate-100">
-        <div className="h-1.5 rounded-full" style={{ width: `${Math.min(100, pct)}%`, backgroundColor: color }} />
+    <div>
+      <p className="mb-2 text-center text-[10px] font-medium uppercase tracking-[0.06em] text-slate-400">{title}</p>
+      <div className="mx-auto" style={{ width: 120, height: 120 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie data={data} dataKey="value" nameKey="name" innerRadius={36} outerRadius={56} paddingAngle={2} stroke="none">
+              {data.map((d) => (
+                <Cell key={d.name} fill={d.color} />
+              ))}
+            </Pie>
+          </PieChart>
+        </ResponsiveContainer>
       </div>
-      <span className="w-24 shrink-0 text-right text-[11px] font-medium tabular-nums text-slate-700">
-        {formatNumber(value)} · {pct.toFixed(0)}%
-      </span>
+      <div className="mt-2 space-y-1.5">
+        {data.map((d) => (
+          <div key={d.name} className="flex items-center gap-2 text-[11px]">
+            <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: d.color }} />
+            <span className="flex-1 text-slate-500">{d.name}</span>
+            <span className="font-medium tabular-nums text-slate-700">
+              {formatNumber(d.value)} · {total ? ((d.value / total) * 100).toFixed(0) : 0}%
+            </span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -351,6 +366,12 @@ export default function Overview({ meta, ga4, sns, missingKey }: { meta: MetaDay
   const jobSessions = clickDenom ? traffic.paid - salarySessions : 0;
   const otherSessions = Math.max(0, traffic.total - traffic.paid);
 
+  const sessionPie = [
+    { name: "Salary page", value: salarySessions, color: "#7F77DD" },
+    { name: "Job page", value: jobSessions, color: "#1D9E75" },
+    { name: "Other", value: otherSessions, color: "#94a3b8" },
+  ];
+
   const stages = [
     { label: "Impressions", value: days.reduce((a, d) => a + d.impressions, 0) },
     { label: "Clicks", value: days.reduce((a, d) => a + d.clicks, 0) },
@@ -522,38 +543,10 @@ export default function Overview({ meta, ga4, sns, missingKey }: { meta: MetaDay
             </table>
           </Card>
 
-          <Card label="Traffic breakdown">
-            <div className="flex items-center gap-3">
-              <div style={{ width: 120, height: 120 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie data={donut} dataKey="value" nameKey="name" innerRadius={36} outerRadius={56} paddingAngle={2} stroke="none">
-                      {donut.map((d) => (
-                        <Cell key={d.name} fill={d.color} />
-                      ))}
-                    </Pie>
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="flex-1 space-y-2">
-                {donut.map((d) => (
-                  <div key={d.name} className="flex items-center gap-2 text-[11px]">
-                    <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: d.color }} />
-                    <span className="flex-1 text-slate-500">{d.name}</span>
-                    <span className="font-medium tabular-nums text-slate-700">
-                      {formatNumber(d.value)} · {traffic.total ? ((d.value / traffic.total) * 100).toFixed(0) : 0}%
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </Card>
-
-          <Card label="Sessions by page">
-            <div className="space-y-2.5">
-              <ProgressRow label="Salary page" value={salarySessions} total={traffic.total} color="#7c3aed" />
-              <ProgressRow label="Job page" value={jobSessions} total={traffic.total} color="#14b8a6" />
-              <ProgressRow label="Other" value={otherSessions} total={traffic.total} color="#94a3b8" />
+          <Card label="Traffic & Sessions">
+            <div className="grid grid-cols-2 gap-4">
+              <DonutBlock title="Traffic" data={donut} total={traffic.total} />
+              <DonutBlock title="Sessions by page" data={sessionPie} total={traffic.total} />
             </div>
           </Card>
 
