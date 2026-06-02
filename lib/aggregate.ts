@@ -171,8 +171,8 @@ export function paidCreatives(days: MetaDay[]): Creative[] {
 
 export type Campaign = "All" | "Salary Page" | "Job Page";
 
-const SALARY_PRODUCTS = ["April", "K-Tuvi"];
-const JOB_PRODUCTS = ["Job-page"];
+const SALARY_PRODUCTS = ["April"];
+const JOB_PRODUCTS = ["K-Tuvi", "Job-page"];
 
 export function campaignProducts(c: Campaign): string[] {
   if (c === "Salary Page") return SALARY_PRODUCTS;

@@ -1,11 +1,15 @@
 import {
+  ALLOWED_META_PRODUCTS,
   GA4Row,
+  JOB_PRODUCTS,
   MetaProduct,
   MetaRow,
+  SALARY_PRODUCTS,
   SNSPlatform,
   SNSPost,
   WeeklyMeta,
   WoWResult,
+  campaignTypeOf,
 } from "@/types";
 
 const META_COLS = {
@@ -52,6 +56,14 @@ function pillar(key: string): string {
   return PILLAR_MAP[key] ?? "Uncategorized";
 }
 
+export function isSalaryProduct(product: string): boolean {
+  return SALARY_PRODUCTS.includes(product as MetaProduct);
+}
+
+export function isJobProduct(product: string): boolean {
+  return JOB_PRODUCTS.includes(product as MetaProduct);
+}
+
 export function parseMetaAds(rows: string[][]): MetaRow[] {
   return rows
     .filter((r) =>
@@ -59,12 +71,17 @@ export function parseMetaAds(rows: string[][]): MetaRow[] {
         .toUpperCase()
         .includes(META_CAMPAIGN_INCLUDES)
     )
+    .filter((r) =>
+      ALLOWED_META_PRODUCTS.includes(r[META_COLS.product] as MetaProduct)
+    )
     .map((r) => {
       const date = isoDate(r[META_COLS.date]);
+      const product = r[META_COLS.product] as MetaProduct;
       return {
         date,
         isoWeek: getISOWeek(date),
-        product: r[META_COLS.product] as MetaProduct,
+        product,
+        campaignType: campaignTypeOf(product),
         adName: r[META_COLS.ad_name] ?? "",
         audience: r[META_COLS.audience] ?? "",
         spend: num(r[META_COLS.spend]),
@@ -86,6 +103,7 @@ export function aggregateMetaWeekly(rows: MetaRow[]): WeeklyMeta[] {
       {
         isoWeek: r.isoWeek,
         product: r.product,
+        campaignType: campaignTypeOf(r.product),
         audience: [],
         spend: 0,
         leads: 0,
