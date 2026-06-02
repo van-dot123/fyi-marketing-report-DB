@@ -120,6 +120,16 @@ function noteColor(note: string): string {
   return "#f59e0b";
 }
 
+function markerColor(campaign: string): string {
+  if (campaign === "Salary Page") return "#BA7517";
+  if (campaign === "Job Page") return "#534AB7";
+  return "#1D9E75";
+}
+
+function markerLabel(note: string): string {
+  return note.length > 20 ? `${note.slice(0, 20)}…` : note;
+}
+
 function audienceBreakdown(days: MetaDay[]) {
   const m = new Map<string, { spend: number; leads: number }>();
   for (const d of days) {
@@ -421,7 +431,14 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
                 <Line yAxisId="right" type="monotone" dataKey="submissions" name="Submissions" stroke="#7c3aed" strokeWidth={2} dot={false} />
                 <Line yAxisId="right" type="monotone" dataKey="jobApps" name="Job apps" stroke="#14b8a6" strokeWidth={2} strokeDasharray="5 4" dot={false} />
                 {rangeNotes.map((n, i) => (
-                  <ReferenceLine key={`${n.date}-${i}`} yAxisId="left" x={n.date} stroke="#94a3b8" strokeDasharray="4 4" />
+                  <ReferenceLine
+                    key={`${n.date}-${i}`}
+                    yAxisId="left"
+                    x={n.date}
+                    stroke={markerColor(n.campaign)}
+                    strokeDasharray="4 4"
+                    label={{ value: markerLabel(n.note), position: "top", fontSize: 9, fill: markerColor(n.campaign) }}
+                  />
                 ))}
               </ComposedChart>
             </ResponsiveContainer>
