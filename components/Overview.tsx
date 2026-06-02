@@ -1,237 +1,369 @@
 "use client";
 
-import { Fragment, useEffect, useState } from "react";
+import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, ArrowDown } from "lucide-react";
-import SpendSessionsChart from "@/components/SpendSessionsChart";
-import EmptyState from "@/components/EmptyState";
-import ComparisonBadge from "@/components/ComparisonBadge";
+import {
+  Bar,
+  CartesianGrid,
+  Cell,
+  ComposedChart,
+  Line,
+  Pie,
+  PieChart,
+  ReferenceLine,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import { AlertTriangle, Plus } from "lucide-react";
 import { useDateRange } from "@/components/DateRangePicker";
 import { supabase } from "@/lib/supabase";
 import { Ga4Day, MetaDay, SnsPostRow } from "@/lib/realData";
-import {
-  PLATFORM_COLORS,
-  funnelWeekly,
-  inRange,
-  metaTotals,
-  paidCreatives,
-  paidMetrics,
-  trafficTotals,
-  trafficWeekly,
-} from "@/lib/aggregate";
-import { Unit, formatNumber, formatPercent, formatPeriod, formatValue } from "@/lib/format";
+import { PLATFORM_COLORS, filterByCampaign, inRange, metaTotals, paidCreatives, trafficTotals } from "@/lib/aggregate";
+import { formatKRW, formatNumber, formatPercent, formatPeriod } from "@/lib/format";
 
-const sum = (nums: number[]) => nums.reduce((a, b) => a + b, 0);
+const PAID_SOURCES = ["MT", "meta"];
+const TARGETS_KEY = "fyi-monthly-targets";
+const LOG_TYPES = ["Paid", "SNS", "Product"] as const;
+const TYPE_COLOR: Record<string, string> = { Paid: "#BA7517", SNS: "#1D9E75", Product: "#534AB7" };
 
-const CR_BENCHMARKS = [
-  { green: 0.03, amber: 0.01 },
-  { green: 0.5, amber: 0.2 },
-  { green: 0.1, amber: 0.03 },
+const TARGET_KPIS: { key: string; kind: "count" | "krw"; lowerBetter: boolean }[] = [
+  { key: "Submissions", kind: "count", lowerBetter: false },
+  { key: "Job apps", kind: "count", lowerBetter: false },
+  { key: "CP Sub ₩", kind: "krw", lowerBetter: true },
+  { key: "CP Job App ₩", kind: "krw", lowerBetter: true },
+  { key: "Budget ₩", kind: "krw", lowerBetter: true },
 ];
 
-function crColor(index: number, cr: number): string {
-  const b = CR_BENCHMARKS[index] ?? { green: 0.5, amber: 0.1 };
-  if (cr >= b.green) return "bg-emerald-50 text-emerald-700";
-  if (cr >= b.amber) return "bg-amber-50 text-amber-700";
+const DEFAULT_TARGETS: Record<string, number> = {
+  Submissions: 500,
+  "Job apps": 200,
+  "CP Sub ₩": 50000,
+  "CP Job App ₩": 60000,
+  "Budget ₩": 30000000,
+};
+
+const CR_BENCH = [
+  { g: 0.02, a: 0.005 },
+  { g: 0.5, a: 0.2 },
+  { g: 0.1, a: 0.03 },
+];
+
+interface Note {
+  date: string;
+  type: string;
+  note: string;
+}
+
+function dayMs(iso: string): number {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d).getTime();
+}
+
+function fmtTick(ms: number): string {
+  return new Date(ms).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+}
+
+function dayStartISO(iso: string): string {
+  return new Date(`${iso}T00:00:00`).toISOString();
+}
+
+function dayEndISO(iso: string): string {
+  const d = new Date(`${iso}T00:00:00`);
+  d.setHours(23, 59, 59, 999);
+  return d.toISOString();
+}
+
+function eachDay(start: string, end: string): string[] {
+  const out: string[] = [];
+  const [sy, sm, sd] = start.split("-").map(Number);
+  const [ey, em, ed] = end.split("-").map(Number);
+  const cur = new Date(sy, sm - 1, sd);
+  const last = new Date(ey, em - 1, ed);
+  while (cur <= last) {
+    out.push(`${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}-${String(cur.getDate()).padStart(2, "0")}`);
+    cur.setDate(cur.getDate() + 1);
+  }
+  return out;
+}
+
+function countByDay(dates: string[]): Map<string, number> {
+  const m = new Map<string, number>();
+  for (const d of dates) m.set(d, (m.get(d) ?? 0) + 1);
+  return m;
+}
+
+function spendByDay(days: MetaDay[]): Map<string, number> {
+  const m = new Map<string, number>();
+  for (const d of days) m.set(d.date, (m.get(d.date) ?? 0) + d.spend);
+  return m;
+}
+
+function achievement(actual: number, target: number, lowerBetter: boolean): number {
+  if (lowerBetter) return actual > 0 ? (target / actual) * 100 : 100;
+  return target > 0 ? (actual / target) * 100 : 0;
+}
+
+function achClass(pct: number): string {
+  if (pct >= 100) return "bg-emerald-50 text-emerald-700";
+  if (pct >= 70) return "bg-amber-50 text-amber-700";
   return "bg-red-50 text-red-700";
 }
 
-function StatCard({
-  label,
-  value,
-  unit,
-  previous,
-  periodLabel,
-}: {
-  label: string;
-  value: number;
-  unit: Unit;
-  previous?: number | null;
-  periodLabel?: string;
-}) {
+function crClass(index: number, cr: number): string {
+  const b = CR_BENCH[index] ?? { g: 0.5, a: 0.1 };
+  if (cr >= b.g) return "bg-emerald-50 text-emerald-600";
+  if (cr >= b.a) return "bg-amber-50 text-amber-600";
+  return "bg-red-50 text-red-600";
+}
+
+function useLocalStorage<T>(key: string, initial: T): [T, (v: T) => void] {
+  const [value, setValue] = useState<T>(initial);
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(key);
+      if (raw) setValue(JSON.parse(raw));
+    } catch {}
+  }, [key]);
+  const update = (v: T) => {
+    setValue(v);
+    try {
+      window.localStorage.setItem(key, JSON.stringify(v));
+    } catch {}
+  };
+  return [value, update];
+}
+
+function Card({ label, link, children }: { label?: string; link?: { href: string; text: string }; children: ReactNode }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-      <p className="text-sm font-medium text-slate-500">{label}</p>
-      <p className="mt-2 text-2xl font-bold text-slate-900">{formatValue(value, unit)}</p>
-      {periodLabel !== undefined && (
-        <div className="mt-2">
-          <ComparisonBadge value={value} previous={previous ?? null} periodLabel={periodLabel} />
+    <div className="rounded-lg bg-white" style={{ border: "0.5px solid #e2e8f0", padding: "13px 15px" }}>
+      {label && (
+        <div className="mb-2.5 flex items-center justify-between">
+          <p className="text-[10px] font-medium uppercase tracking-[0.06em] text-slate-400">{label}</p>
+          {link && (
+            <Link href={link.href} className="text-[11px] font-medium text-purple-600 hover:text-purple-700">
+              {link.text} →
+            </Link>
+          )}
         </div>
       )}
+      {children}
     </div>
   );
 }
 
-interface ProductData {
-  total: number;
-  paid: number;
-  organic: number;
-  direct: number;
-  jobApps: number;
+function Wow({ value, previous, periodLabel }: { value: number | null; previous: number | null; periodLabel: string }) {
+  if (value === null || previous === null || previous === 0) return <p className="mt-0.5 text-[10px] text-slate-300">vs {periodLabel}</p>;
+  const pct = (value - previous) / previous;
+  const up = pct >= 0;
+  return (
+    <p className={["mt-0.5 text-[10px]", up ? "text-emerald-600" : "text-red-500"].join(" ")}>
+      {up ? "▲" : "▼"} {Math.abs(pct * 100).toFixed(0)}% vs {periodLabel}
+    </p>
+  );
 }
 
-const PAID_SOURCES = ["MT", "meta"];
-const ORGANIC_SOURCES = ["facebook", "threads", "instagram", "zalo"];
+function ProgressRow({ label, value, total, color }: { label: string; value: number; total: number; color: string }) {
+  const pct = total ? (value / total) * 100 : 0;
+  return (
+    <div className="flex items-center gap-2.5">
+      <span className="w-20 shrink-0 text-[11px] text-slate-500">{label}</span>
+      <div className="h-1.5 flex-1 rounded-full bg-slate-100">
+        <div className="h-1.5 rounded-full" style={{ width: `${Math.min(100, pct)}%`, backgroundColor: color }} />
+      </div>
+      <span className="w-24 shrink-0 text-right text-[11px] font-medium tabular-nums text-slate-700">
+        {formatNumber(value)} · {pct.toFixed(0)}%
+      </span>
+    </div>
+  );
+}
 
-function ProductMetrics({ spend, start, end }: { spend: number; start: string; end: string }) {
-  const [status, setStatus] = useState<"loading" | "connecting" | "ready">("loading");
-  const [data, setData] = useState<ProductData>({ total: 0, paid: 0, organic: 0, direct: 0, jobApps: 0 });
+export default function Overview({ meta, ga4, sns, missingKey }: { meta: MetaDay[]; ga4: Ga4Day[]; sns: SnsPostRow[]; missingKey: boolean }) {
+  const { start, end, previousStart, previousEnd } = useDateRange();
+  const periodLabel = formatPeriod(previousStart, previousEnd);
+
+  const days = useMemo(() => inRange(meta, start, end), [meta, start, end]);
+  const prevDays = useMemo(() => inRange(meta, previousStart, previousEnd), [meta, previousStart, previousEnd]);
+  const ga4Days = useMemo(() => inRange(ga4, start, end), [ga4, start, end]);
+  const prevGa4 = useMemo(() => inRange(ga4, previousStart, previousEnd), [ga4, previousStart, previousEnd]);
+  const snsDays = useMemo(() => inRange(sns, start, end), [sns, start, end]);
+
+  const [targets, setTargets] = useLocalStorage<Record<string, number>>(TARGETS_KEY, DEFAULT_TARGETS);
+
+  const [subs, setSubs] = useState<string[]>([]);
+  const [jobs, setJobs] = useState<string[]>([]);
+  const [signups, setSignups] = useState<string[] | null>(null);
+  const [prevSubs, setPrevSubs] = useState(0);
+  const [prevJobs, setPrevJobs] = useState(0);
+  const [notes, setNotes] = useState<Note[]>([]);
+
+  const [noteType, setNoteType] = useState<(typeof LOG_TYPES)[number]>("Paid");
+  const [noteText, setNoteText] = useState("");
+  const [noteDate, setNoteDate] = useState(start);
+  const [noteError, setNoteError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!supabase) {
-      setStatus("connecting");
-      return;
-    }
+    if (!supabase) return;
     let active = true;
-    setStatus("loading");
-    const lo = `${start}T00:00:00`;
-    const hi = `${end}T23:59:59`;
-    const subs = () =>
-      supabase!
-        .from("submissions")
-        .select("*", { count: "exact", head: true })
-        .gte("created_at", lo)
-        .lte("created_at", hi);
-
+    const lo = dayStartISO(start);
+    const hi = dayEndISO(end);
+    const plo = dayStartISO(previousStart);
+    const phi = dayEndISO(previousEnd);
     Promise.all([
-      subs(),
-      subs().in("source", PAID_SOURCES),
-      subs().in("source", ORGANIC_SOURCES),
-      subs().eq("source", "direct"),
-      supabase
-        .from("job_applications")
-        .select("*", { count: "exact", head: true })
-        .gte("created_at", lo)
-        .lte("created_at", hi),
-    ]).then((res) => {
-      if (!active) return;
-      if (res.some((r) => r.error)) {
-        setStatus("connecting");
-        return;
-      }
-      setData({
-        total: res[0].count ?? 0,
-        paid: res[1].count ?? 0,
-        organic: res[2].count ?? 0,
-        direct: res[3].count ?? 0,
-        jobApps: res[4].count ?? 0,
-      });
-      setStatus("ready");
+      supabase.from("submissions").select("created_at, source").gte("created_at", lo).lte("created_at", hi),
+      supabase.from("job_applications").select("created_at").gte("created_at", lo).lte("created_at", hi),
+      supabase.from("submissions").select("*", { count: "exact", head: true }).in("source", PAID_SOURCES).gte("created_at", plo).lte("created_at", phi),
+      supabase.from("job_applications").select("*", { count: "exact", head: true }).gte("created_at", plo).lte("created_at", phi),
+    ]).then(([s, j, ps, pj]) => {
+      if (!active || s.error || j.error) return;
+      const subRows = (s.data ?? []).map((r: any) => String(r.created_at).slice(0, 10));
+      const jobRows = (j.data ?? []).map((r: any) => String(r.created_at).slice(0, 10));
+      console.log(`[overview] submissions rows: ${subRows.length}`);
+      console.log(`[overview] job_applications rows: ${jobRows.length}`);
+      setSubs(subRows);
+      setJobs(jobRows);
+      setPrevSubs(ps.count ?? 0);
+      setPrevJobs(pj.count ?? 0);
     });
+    supabase
+      .from("sign_ups")
+      .select("created_at")
+      .gte("created_at", lo)
+      .lte("created_at", hi)
+      .then(({ data, error }) => {
+        if (!active) return;
+        if (error) {
+          setSignups(null);
+          return;
+        }
+        const rows = (data ?? []).map((r: any) => String(r.created_at).slice(0, 10));
+        console.log(`[overview] sign_ups rows: ${rows.length}`);
+        setSignups(rows);
+      });
     return () => {
       active = false;
     };
-  }, [start, end]);
+  }, [start, end, previousStart, previousEnd]);
 
-  if (status === "loading") {
-    return <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-400 shadow-sm">Loading submissions…</div>;
-  }
-  if (status === "connecting") return <EmptyState variant="connecting" />;
-  if (data.total === 0) return <EmptyState variant="no-data" />;
+  const loadNotes = useCallback(() => {
+    if (!supabase) return;
+    supabase
+      .from("optimization_log")
+      .select("date, campaign, note")
+      .order("date", { ascending: false })
+      .then(({ data, error }) => {
+        if (error) {
+          console.warn("[overview] optimization_log unavailable", error.message);
+          return;
+        }
+        setNotes((data ?? []).map((r: any) => ({ date: String(r.date).slice(0, 10), type: r.campaign ?? "", note: r.note ?? "" })));
+      });
+  }, []);
 
-  const breakdown = [
-    { label: "Paid (MT / meta)", value: data.paid },
-    { label: "Organic (SNS)", value: data.organic },
-    { label: "Direct", value: data.direct },
+  useEffect(() => {
+    loadNotes();
+  }, [loadNotes]);
+
+  const addNote = async () => {
+    setNoteError(null);
+    if (!supabase) {
+      setNoteError("Supabase not connected.");
+      return;
+    }
+    if (!noteDate || !noteText.trim()) {
+      setNoteError("Enter a date and note.");
+      return;
+    }
+    const { error } = await supabase.from("optimization_log").insert({ date: noteDate, campaign: noteType, note: noteText.trim() });
+    if (error) {
+      setNoteError(error.message);
+      return;
+    }
+    setNoteText("");
+    loadNotes();
+  };
+
+  const t = metaTotals(days);
+  const prevT = metaTotals(prevDays);
+  const salarySpend = metaTotals(filterByCampaign(days, "Salary Page")).spend;
+  const jobSpend = metaTotals(filterByCampaign(days, "Job Page")).spend;
+  const prevSalarySpend = metaTotals(filterByCampaign(prevDays, "Salary Page")).spend;
+  const prevJobSpend = metaTotals(filterByCampaign(prevDays, "Job Page")).spend;
+
+  const traffic = trafficTotals(ga4Days);
+  const prevTraffic = trafficTotals(prevGa4);
+
+  const submissions = subs.length;
+  const jobApps = jobs.length;
+  const signupCount = signups ? signups.length : null;
+  const cpSub = submissions ? Math.round(salarySpend / submissions) : 0;
+  const cpJob = jobApps ? Math.round(jobSpend / jobApps) : 0;
+  const prevCpSub = prevSubs ? Math.round(prevSalarySpend / prevSubs) : 0;
+  const prevCpJob = prevJobs ? Math.round(prevJobSpend / prevJobs) : 0;
+
+  const metrics: { label: string; value: number | null; prev: number | null; fmt: (n: number) => string }[] = [
+    { label: "Total Spend ₩", value: t.spend, prev: prevT.spend, fmt: formatKRW },
+    { label: "CTR%", value: t.ctr, prev: prevT.ctr, fmt: formatPercent },
+    { label: "CP Sub ₩", value: cpSub, prev: prevCpSub, fmt: formatKRW },
+    { label: "CP Job App ₩", value: cpJob, prev: prevCpJob, fmt: formatKRW },
+    { label: "Total Sessions", value: traffic.total, prev: prevTraffic.total, fmt: formatNumber },
+    { label: "Submissions", value: submissions, prev: prevSubs, fmt: formatNumber },
+    { label: "Job Apps", value: jobApps, prev: prevJobs, fmt: formatNumber },
+    { label: "Sign-ups", value: signupCount, prev: null, fmt: formatNumber },
   ];
 
-  return (
-    <div className="space-y-5">
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
-        <StatCard label="Submissions" value={data.total} unit="number" />
-        <StatCard label="Job Applications" value={data.jobApps} unit="number" />
-        <StatCard
-          label="Cost per Submission"
-          value={spend > 0 ? Math.round(spend / data.total) : 0}
-          unit="currency"
-        />
-      </div>
+  const dates = useMemo(() => eachDay(start, end), [start, end]);
+  const startMs = dayMs(start);
+  const endMs = dayMs(end);
+  const chartData = useMemo(() => {
+    const sm = spendByDay(days);
+    const subM = countByDay(subs);
+    const jobM = countByDay(jobs);
+    const suM = signups ? countByDay(signups) : null;
+    return dates
+      .map((d) => ({ ts: dayMs(d), spend: sm.get(d) ?? 0, submissions: subM.get(d) ?? 0, jobApps: jobM.get(d) ?? 0, signups: suM ? suM.get(d) ?? 0 : 0 }))
+      .filter((p) => p.ts >= startMs && p.ts <= endMs);
+  }, [dates, days, subs, jobs, signups, startMs, endMs]);
 
-      <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h3 className="mb-4 text-sm font-semibold text-slate-700">Submissions by source</h3>
-        <div className="space-y-3">
-          {breakdown.map((b) => (
-            <div key={b.label} className="flex items-center gap-3">
-              <span className="w-36 shrink-0 text-sm text-slate-600">{b.label}</span>
-              <div className="h-2 flex-1 rounded-full bg-slate-100">
-                <div
-                  className="h-2 rounded-full bg-purple-600"
-                  style={{ width: `${data.total ? ((b.value / data.total) * 100).toFixed(1) : 0}%` }}
-                />
-              </div>
-              <span className="w-12 shrink-0 text-right text-sm font-bold tabular-nums text-slate-900">
-                {formatNumber(b.value)}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
+  const rangeNotes = notes.filter((n) => n.date >= start && n.date <= end);
+  const recentNotes = rangeNotes.slice(0, 5);
 
-function SectionHead({ title, href, cta }: { title: string; href?: string; cta?: string }) {
-  return (
-    <div className="mb-3 flex items-center justify-between">
-      <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400">{title}</h2>
-      {href && (
-        <Link href={href} className="text-sm font-medium text-purple-600 hover:text-purple-700">
-          {cta} →
-        </Link>
-      )}
-    </div>
-  );
-}
+  const actuals: Record<string, number> = {
+    Submissions: submissions,
+    "Job apps": jobApps,
+    "CP Sub ₩": cpSub,
+    "CP Job App ₩": cpJob,
+    "Budget ₩": t.spend,
+  };
 
-export default function Overview({
-  meta,
-  ga4,
-  sns,
-  missingKey,
-}: {
-  meta: MetaDay[];
-  ga4: Ga4Day[];
-  sns: SnsPostRow[];
-  missingKey: boolean;
-}) {
-  const { start, end, previousStart, previousEnd } = useDateRange();
-  const paidDays = inRange(meta, start, end);
-  const ga4Days = inRange(ga4, start, end);
-  const snsDays = inRange(sns, start, end);
+  const donut = [
+    { name: "Paid (Meta)", value: traffic.paid, color: "#7F77DD" },
+    { name: "Organic SNS", value: traffic.organic, color: "#1D9E75" },
+    { name: "Direct & other", value: traffic.other, color: "#94a3b8" },
+  ];
 
-  const periodLabel = formatPeriod(previousStart, previousEnd);
-  const prevPaid = inRange(meta, previousStart, previousEnd);
-  const prevGa4 = inRange(ga4, previousStart, previousEnd);
-  const prevPaidTotals = prevPaid.length ? metaTotals(prevPaid) : null;
-  const prevTraffic = prevGa4.length ? trafficTotals(prevGa4) : null;
-
-  const paidCards = paidMetrics(paidDays);
-
-  const tw = trafficWeekly(ga4Days);
-  const totalSeries = tw.map((w) => w.total);
-  const paidSeries = tw.map((w) => w.paid);
-  const orgSeries = tw.map((w) => w.organic);
-  const otherSeries = tw.map((w) => w.other);
-
-  const fw = funnelWeekly(paidDays, ga4Days);
-  const fSum = (pick: (w: (typeof fw)[number]) => number) => fw.reduce((s, w) => s + pick(w), 0);
-  const spend = fSum((w) => w.spend);
-
-  const chartData = fw.map((w) => ({ week: w.week, spend: w.spend, sessions: w.sessions }));
+  const sumClicks = (ds: MetaDay[]) => ds.reduce((a, d) => a + d.clicks, 0);
+  const salaryClicks = sumClicks(filterByCampaign(days, "Salary Page"));
+  const jobClicks = sumClicks(filterByCampaign(days, "Job Page"));
+  const clickDenom = salaryClicks + jobClicks;
+  const salarySessions = clickDenom ? Math.round((traffic.paid * salaryClicks) / clickDenom) : 0;
+  const jobSessions = clickDenom ? traffic.paid - salarySessions : 0;
+  const otherSessions = Math.max(0, traffic.total - traffic.paid);
 
   const stages = [
-    { label: "Impressions", value: fSum((w) => w.impressions) },
-    { label: "Clicks", value: fSum((w) => w.clicks) },
-    { label: "Sessions", value: fSum((w) => w.sessions) },
-    { label: "Conversions", value: fSum((w) => w.conversions) },
+    { label: "Impressions", value: days.reduce((a, d) => a + d.impressions, 0) },
+    { label: "Clicks", value: days.reduce((a, d) => a + d.clicks, 0) },
+    { label: "Sessions", value: traffic.total },
+    { label: "Subs + Apps", value: submissions + jobApps },
   ];
   const funnelMax = stages[0].value || 1;
 
-  const bestCreative = paidCreatives(paidDays)[0];
+  const bestCreative = paidCreatives(days)[0];
   const bestPost = [...snsDays].sort((a, b) => b.views - a.views)[0];
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-3">
       {missingKey && (
         <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           <AlertTriangle className="h-4 w-4 shrink-0" />
@@ -239,131 +371,263 @@ export default function Overview({
         </div>
       )}
 
-      <section>
-        <SectionHead title="Paid metrics" href="/paid" cta="View details" />
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
-          {paidCards.map((metric) => (
-            <StatCard
-              key={metric.key}
-              label={metric.label}
-              value={metric.value}
-              unit={metric.unit}
-              previous={prevPaidTotals ? prevPaidTotals[metric.key] : null}
-              periodLabel={periodLabel}
-            />
-          ))}
-        </div>
-      </section>
-
-      <section>
-        <SectionHead title="Traffic metrics" href="/sns" cta="View details" />
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
-          <StatCard label="Total Sessions" value={sum(totalSeries)} unit="number" previous={prevTraffic ? prevTraffic.total : null} periodLabel={periodLabel} />
-          <StatCard label="Paid Sessions (meta)" value={sum(paidSeries)} unit="number" previous={prevTraffic ? prevTraffic.paid : null} periodLabel={periodLabel} />
-          <StatCard label="Organic Sessions (SNS)" value={sum(orgSeries)} unit="number" previous={prevTraffic ? prevTraffic.organic : null} periodLabel={periodLabel} />
-          <StatCard label="Direct & Other" value={sum(otherSeries)} unit="number" previous={prevTraffic ? prevTraffic.other : null} periodLabel={periodLabel} />
-        </div>
-      </section>
-
-      <section>
-        <SectionHead title="Product metrics" href="/funnel" cta="View details" />
-        <ProductMetrics spend={spend} start={start} end={end} />
-      </section>
-
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <section className="flex flex-col">
-          <SectionHead title="Spend & Sessions" href="/paid" cta="View details" />
-          <SpendSessionsChart data={chartData} height={280} />
-        </section>
-
-        <section className="flex flex-col">
-          <SectionHead title="Funnel snapshot" href="/funnel" cta="View full funnel" />
-          <div className="flex flex-1 flex-col justify-center rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-            {stages.map((stage, i) => {
-              const next = stages[i + 1];
-              const cr = next && stage.value ? next.value / stage.value : 0;
-              const width = `${((stage.value / funnelMax) * 100).toFixed(1)}%`;
-              return (
-                <Fragment key={stage.label}>
-                  <div className="flex items-center gap-3">
-                    <span className="w-[120px] shrink-0 text-sm text-slate-600">{stage.label}</span>
-                    <div className="h-2 flex-1 rounded-full bg-slate-100">
-                      <div className="h-2 rounded-full bg-purple-600" style={{ width }} />
-                    </div>
-                    <span className="w-20 shrink-0 text-right text-sm font-bold tabular-nums text-slate-900">
-                      {formatNumber(stage.value)}
-                    </span>
-                  </div>
-                  {next && (
-                    <div className="flex justify-center py-1.5">
-                      <span className={["inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[11px] font-semibold", crColor(i, cr)].join(" ")}>
-                        <ArrowDown className="h-3 w-3" />
-                        {formatPercent(cr)}
+      <div className="grid items-start gap-3" style={{ gridTemplateColumns: "minmax(0,1fr) 340px" }}>
+        <div className="space-y-3">
+          <Card label="Monthly target progress">
+            <div className="space-y-3">
+              {[
+                { key: "Submissions", actual: submissions, color: "#7c3aed" },
+                { key: "Job apps", actual: jobApps, color: "#14b8a6" },
+              ].map((b) => {
+                const target = targets[b.key] ?? 0;
+                const pct = target ? (b.actual / target) * 100 : 0;
+                return (
+                  <div key={b.key}>
+                    <div className="mb-1 flex items-center justify-between text-[11px]">
+                      <span className="text-slate-500">{b.key}</span>
+                      <span className="font-medium tabular-nums text-slate-700">
+                        {formatNumber(b.actual)} / {formatNumber(target)}
                       </span>
                     </div>
-                  )}
-                </Fragment>
-              );
-            })}
-          </div>
-        </section>
-      </div>
-
-      <section>
-        <SectionHead title="Quick glance" />
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-base font-semibold text-slate-900">Best paid creative</h3>
-              <Link href="/paid" className="text-sm font-medium text-purple-600 hover:text-purple-700">View all →</Link>
-            </div>
-            {bestCreative ? (
-              <>
-                <p className="truncate font-medium text-slate-800">{bestCreative.adName}</p>
-                <div className="mt-3 flex gap-8 text-sm">
-                  <div>
-                    <p className="text-slate-400">CPL</p>
-                    <p className="font-semibold text-slate-900">{formatValue(bestCreative.cpl, "currency")}</p>
+                    <div className="flex items-center gap-2">
+                      <div className="h-2 flex-1 rounded-full bg-slate-100">
+                        <div className="h-2 rounded-full" style={{ width: `${Math.min(100, pct)}%`, backgroundColor: b.color }} />
+                      </div>
+                      <span className={["rounded-full px-1.5 py-0.5 text-[10px] font-medium", achClass(pct)].join(" ")}>{pct.toFixed(0)}%</span>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-slate-400">Leads</p>
-                    <p className="font-semibold text-slate-900">{formatNumber(bestCreative.leads)}</p>
-                  </div>
-                </div>
-              </>
-            ) : (
-              <p className="text-sm text-slate-400">No data in range.</p>
-            )}
-          </div>
-
-          <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-base font-semibold text-slate-900">Best organic post</h3>
-              <Link href="/sns" className="text-sm font-medium text-purple-600 hover:text-purple-700">View all →</Link>
+                );
+              })}
             </div>
-            {bestPost ? (
-              <div className="flex items-center gap-8 text-sm">
-                <div>
-                  <p className="text-slate-400">Platform</p>
-                  <span className="mt-1 inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium text-white" style={{ backgroundColor: PLATFORM_COLORS[bestPost.platform] }}>
-                    {bestPost.platform}
-                  </span>
+          </Card>
+
+          <Card label="Key metrics">
+            <div className="grid grid-cols-4" style={{ gap: 10 }}>
+              {metrics.map((m) => (
+                <div key={m.label} className="rounded-md bg-slate-50" style={{ padding: "9px 11px" }}>
+                  <p className="text-[11px] text-slate-400">{m.label}</p>
+                  <p className="mt-0.5 text-[18px] font-medium leading-tight text-slate-900">{m.value === null ? "—" : m.fmt(m.value)}</p>
+                  <Wow value={m.value} previous={m.prev} periodLabel={periodLabel} />
                 </div>
-                <div>
-                  <p className="text-slate-400">Pillar</p>
-                  <p className="font-semibold text-slate-900">{bestPost.pillar}</p>
+              ))}
+            </div>
+          </Card>
+
+          <Card label="Daily trend">
+            <div className="w-full" style={{ height: 200 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={chartData} margin={{ top: 16, right: 8, bottom: 0, left: -8 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" strokeWidth={0.5} vertical={false} />
+                  <XAxis dataKey="ts" type="number" scale="time" domain={[startMs, endMs]} tickFormatter={fmtTick} tickLine={false} axisLine={false} minTickGap={24} tick={{ fill: "#94a3b8", fontSize: 10 }} />
+                  <YAxis yAxisId="left" tickLine={false} axisLine={false} tick={{ fill: "#94a3b8", fontSize: 10 }} />
+                  <YAxis yAxisId="right" orientation="right" tickLine={false} axisLine={false} tick={{ fill: "#94a3b8", fontSize: 10 }} />
+                  <Tooltip labelFormatter={(d) => fmtTick(Number(d))} contentStyle={{ borderRadius: 8, border: "0.5px solid #e2e8f0", fontSize: 11 }} />
+                  <Bar yAxisId="left" dataKey="spend" name="Spend" fill="#cbd5e1" radius={[3, 3, 0, 0]} barSize={12} />
+                  <Line yAxisId="right" type="monotone" dataKey="submissions" name="Submissions" stroke="#7c3aed" strokeWidth={2} dot={false} />
+                  <Line yAxisId="right" type="monotone" dataKey="jobApps" name="Job apps" stroke="#14b8a6" strokeWidth={2} strokeDasharray="5 4" dot={false} />
+                  {signups && <Line yAxisId="right" type="monotone" dataKey="signups" name="Sign-ups" stroke="#2563eb" strokeWidth={2} strokeDasharray="2 3" dot={false} />}
+                  {rangeNotes.map((n, i) => (
+                    <ReferenceLine key={`${n.date}-${i}`} yAxisId="left" x={dayMs(n.date)} stroke={TYPE_COLOR[n.type] ?? "#94a3b8"} strokeDasharray="4 4" />
+                  ))}
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          </Card>
+
+          <Card label="Optimization log" link={{ href: "/paid", text: "View all" }}>
+            <div className="space-y-2">
+              {recentNotes.length === 0 && <p className="text-xs text-slate-400">No notes in range.</p>}
+              {recentNotes.map((n, i) => (
+                <div key={`${n.date}-${i}`} className="rounded-r-md bg-slate-50 px-3 py-1.5" style={{ borderLeftWidth: 2, borderLeftStyle: "solid", borderLeftColor: TYPE_COLOR[n.type] ?? "#94a3b8" }}>
+                  <p className="text-[10px] text-slate-400">
+                    {fmtTick(dayMs(n.date))} · {n.type || "—"}
+                  </p>
+                  <p className="text-xs text-slate-700">{n.note}</p>
                 </div>
-                <div>
-                  <p className="text-slate-400">Views</p>
-                  <p className="font-semibold text-slate-900">{formatNumber(bestPost.views)}</p>
-                </div>
-              </div>
-            ) : (
-              <p className="text-sm text-slate-400">No data in range.</p>
-            )}
-          </div>
+              ))}
+            </div>
+            <div className="mt-3 flex flex-wrap items-end gap-2">
+              <select
+                value={noteType}
+                onChange={(e) => setNoteType(e.target.value as (typeof LOG_TYPES)[number])}
+                className="rounded-md px-2 py-1.5 text-xs text-slate-700 outline-none focus:border-purple-500"
+                style={{ border: "0.5px solid #e2e8f0" }}
+              >
+                {LOG_TYPES.map((tp) => (
+                  <option key={tp} value={tp}>
+                    {tp}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="text"
+                value={noteText}
+                onChange={(e) => setNoteText(e.target.value)}
+                placeholder="Add an optimization note"
+                className="min-w-[140px] flex-1 rounded-md px-3 py-1.5 text-xs text-slate-700 outline-none focus:border-purple-500"
+                style={{ border: "0.5px solid #e2e8f0" }}
+              />
+              <input
+                type="date"
+                value={noteDate}
+                onChange={(e) => setNoteDate(e.target.value)}
+                className="rounded-md px-2 py-1.5 text-xs text-slate-700 outline-none focus:border-purple-500"
+                style={{ border: "0.5px solid #e2e8f0" }}
+              />
+              <button onClick={addNote} className="inline-flex items-center gap-1 rounded-md bg-purple-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-purple-700">
+                <Plus className="h-3.5 w-3.5" />
+                Add
+              </button>
+            </div>
+            {noteError && <p className="mt-2 text-[11px] text-red-500">{noteError}</p>}
+          </Card>
         </div>
-      </section>
+
+        <div className="space-y-3">
+          <Card label="Monthly targets">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-left text-[10px] font-medium uppercase tracking-[0.06em] text-slate-400">
+                  <th className="pb-2 font-medium">KPI</th>
+                  <th className="pb-2 text-right font-medium">Target</th>
+                  <th className="pb-2 text-right font-medium">Actual</th>
+                  <th className="pb-2 text-right font-medium">Ach.</th>
+                </tr>
+              </thead>
+              <tbody>
+                {TARGET_KPIS.map((kpi, i) => {
+                  const target = targets[kpi.key] ?? 0;
+                  const actual = actuals[kpi.key] ?? 0;
+                  const pct = achievement(actual, target, kpi.lowerBetter);
+                  return (
+                    <tr key={kpi.key} className={i % 2 === 1 ? "bg-slate-50" : ""}>
+                      <td className="py-1.5 text-slate-700">{kpi.key}</td>
+                      <td className="py-1.5 text-right">
+                        <input
+                          type="number"
+                          value={target}
+                          onChange={(e) => setTargets({ ...targets, [kpi.key]: Number(e.target.value) })}
+                          className="w-20 rounded-md px-1.5 py-1 text-right text-xs text-slate-700 outline-none focus:border-purple-500"
+                          style={{ border: "0.5px solid #e2e8f0" }}
+                        />
+                      </td>
+                      <td className="py-1.5 text-right text-slate-600">{kpi.kind === "krw" ? formatKRW(actual) : formatNumber(actual)}</td>
+                      <td className="py-1.5 text-right">
+                        <span className={["inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium", achClass(pct)].join(" ")}>{pct.toFixed(0)}%</span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </Card>
+
+          <Card label="Traffic breakdown">
+            <div className="flex items-center gap-3">
+              <div style={{ width: 120, height: 120 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={donut} dataKey="value" nameKey="name" innerRadius={36} outerRadius={56} paddingAngle={2} stroke="none">
+                      {donut.map((d) => (
+                        <Cell key={d.name} fill={d.color} />
+                      ))}
+                    </Pie>
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="flex-1 space-y-2">
+                {donut.map((d) => (
+                  <div key={d.name} className="flex items-center gap-2 text-[11px]">
+                    <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: d.color }} />
+                    <span className="flex-1 text-slate-500">{d.name}</span>
+                    <span className="font-medium tabular-nums text-slate-700">
+                      {formatNumber(d.value)} · {traffic.total ? ((d.value / traffic.total) * 100).toFixed(0) : 0}%
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </Card>
+
+          <Card label="Sessions by page">
+            <div className="space-y-2.5">
+              <ProgressRow label="Salary page" value={salarySessions} total={traffic.total} color="#7c3aed" />
+              <ProgressRow label="Job page" value={jobSessions} total={traffic.total} color="#14b8a6" />
+              <ProgressRow label="Other" value={otherSessions} total={traffic.total} color="#94a3b8" />
+            </div>
+          </Card>
+
+          <Card label="Funnel snapshot" link={{ href: "/funnel", text: "View full funnel" }}>
+            <div className="space-y-1.5">
+              {stages.map((stage, i) => {
+                const next = stages[i + 1];
+                const cr = next && stage.value ? next.value / stage.value : 0;
+                return (
+                  <div key={stage.label}>
+                    <div className="flex items-center gap-2">
+                      <span className="w-24 shrink-0 text-[11px] text-slate-500">{stage.label}</span>
+                      <div className="h-1.5 flex-1 rounded-full bg-slate-100">
+                        <div className="h-1.5 rounded-full bg-purple-600" style={{ width: `${((stage.value / funnelMax) * 100).toFixed(1)}%` }} />
+                      </div>
+                      <span className="w-16 shrink-0 text-right text-[11px] font-medium tabular-nums text-slate-700">{formatNumber(stage.value)}</span>
+                    </div>
+                    {next && (
+                      <div className="flex justify-center py-0.5">
+                        <span className={["rounded-full px-1.5 py-0.5 text-[9px] font-medium", crClass(i, cr)].join(" ")}>↓ {formatPercent(cr)}</span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+
+          <Card label="Quick glance">
+            <div className="space-y-3">
+              <div>
+                <div className="mb-1 flex items-center justify-between">
+                  <p className="text-[11px] font-medium text-slate-600">Best paid creative</p>
+                  <Link href="/paid" className="text-[10px] font-medium text-purple-600 hover:text-purple-700">View all →</Link>
+                </div>
+                {bestCreative ? (
+                  <div className="rounded-md bg-slate-50 px-3 py-2">
+                    <p className="truncate text-xs font-medium text-slate-800">{bestCreative.adName}</p>
+                    <div className="mt-1 flex gap-4 text-[10px] text-slate-500">
+                      <span>Subs {formatNumber(bestCreative.leads)}</span>
+                      <span>CP Sub {formatKRW(bestCreative.cpl)}</span>
+                      <span>CTR {formatPercent(bestCreative.ctr)}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-slate-400">No data in range.</p>
+                )}
+              </div>
+              <div>
+                <div className="mb-1 flex items-center justify-between">
+                  <p className="text-[11px] font-medium text-slate-600">Best organic post</p>
+                  <Link href="/sns" className="text-[10px] font-medium text-purple-600 hover:text-purple-700">View all →</Link>
+                </div>
+                {bestPost ? (
+                  <div className="rounded-md bg-slate-50 px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium text-white" style={{ backgroundColor: PLATFORM_COLORS[bestPost.platform] }}>
+                        {bestPost.platform}
+                      </span>
+                      <span className="truncate text-xs font-medium text-slate-800">{bestPost.pillar}</span>
+                    </div>
+                    <div className="mt-1 flex gap-4 text-[10px] text-slate-500">
+                      <span>Views {formatNumber(bestPost.views)}</span>
+                      <span>ER {formatPercent(bestPost.views ? bestPost.interactions / bestPost.views : 0)}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-slate-400">No data in range.</p>
+                )}
+              </div>
+            </div>
+          </Card>
+        </div>
+      </div>
     </div>
   );
 }
