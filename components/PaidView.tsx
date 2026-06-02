@@ -161,8 +161,12 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
         setDbStatus("connecting");
         return;
       }
-      setSubs((s.data ?? []).map((r: any) => ({ date: String(r.created_at).slice(0, 10), source: String(r.source ?? "") })));
-      setJobs((j.data ?? []).map((r: any) => String(r.created_at).slice(0, 10)));
+      const subRows = (s.data ?? []).map((r: any) => ({ date: String(r.created_at).slice(0, 10), source: String(r.source ?? "") }));
+      const jobRows = (j.data ?? []).map((r: any) => String(r.created_at).slice(0, 10));
+      console.log(`[paid] submissions rows: ${subRows.length}`);
+      console.log(`[paid] job_applications rows: ${jobRows.length}`);
+      setSubs(subRows);
+      setJobs(jobRows);
       setDbStatus("ready");
     });
     return () => {
@@ -186,6 +190,10 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
   const totalJobApps = jobs.length;
   const totalSpend = metaTotals(days).spend;
   const costPerSub = totalSubmissions ? Math.round(totalSpend / totalSubmissions) : 0;
+  const metaSessions = useMemo(
+    () => ga4Days.filter((d) => d.channel === "paid").reduce((a, d) => a + d.sessions, 0),
+    [ga4Days]
+  );
 
   const trackerRows = [
     { key: "submissions" as const, label: "Submissions", actual: totalSubmissions, unit: "number" as Unit, lowerBetter: false },
@@ -196,10 +204,7 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
 
   const groupCards = (group: "Salary Page" | "Job Page") => {
     const t = metaTotals(filterByCampaign(days, group));
-    const products = campaignProducts(group);
-    const sessions = Math.round(
-      allCreatives.filter((c) => products.includes(c.product)).reduce((a, c) => a + c.sessions, 0)
-    );
+    const sessions = metaSessions;
     if (group === "Salary Page") {
       const subsCount = totalPaidSubmissions;
       return [
