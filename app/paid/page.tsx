@@ -1,7 +1,7 @@
 import PaidView from "@/components/PaidView";
-import { getMetaDays } from "@/lib/realData";
+import { getGa4Days, getMetaDays } from "@/lib/realData";
 
 export default async function PaidPage() {
-  const meta = await getMetaDays();
-  return <PaidView meta={meta} />;
+  const [meta, ga4] = await Promise.all([getMetaDays(), getGa4Days()]);
+  return <PaidView meta={meta} ga4={ga4} />;
 }
