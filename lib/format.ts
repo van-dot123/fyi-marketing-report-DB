@@ -10,6 +10,10 @@ export function formatNumber(value: number): string {
   return new Intl.NumberFormat("en-US").format(value);
 }
 
+export function formatVnd(value: number): string {
+  return Math.round(value).toLocaleString("vi-VN");
+}
+
 export function formatPct(value: number): string {
   const sign = value >= 0 ? "+" : "";
   return `${sign}${(value * 100).toFixed(0)}%`;
