@@ -375,15 +375,20 @@ export default function Overview({ meta, ga4, sns, missingKey }: { meta: MetaDay
     "Budget ₩": t.spend,
   };
 
-  const sumClicks = (ds: MetaDay[]) => ds.reduce((a, d) => a + d.clicks, 0);
-  const salaryClicks = sumClicks(filterByCampaign(days, "Salary Page"));
-  const jobClicks = sumClicks(filterByCampaign(days, "Job Page"));
-  const clickDenom = salaryClicks + jobClicks;
-  const salaryRatio = clickDenom ? salaryClicks / clickDenom : 0;
-  const jobRatio = clickDenom ? jobClicks / clickDenom : 0;
-  const salarySessions = Math.round(traffic.paid * salaryRatio);
-  const jobSessions = clickDenom ? traffic.paid - salarySessions : 0;
-  const otherSessions = Math.max(0, traffic.total - traffic.paid);
+  const sessWhere = (fn: (d: Ga4Day) => boolean) => ga4Days.filter(fn).reduce((a, d) => a + d.sessions, 0);
+  const ga4Product = (c: string) => {
+    const s = c.toLowerCase();
+    if (s.includes("april")) return "April";
+    if (s.includes("tuvi")) return "K-Tuvi";
+    if (s.includes("job")) return "Job-page";
+    return "";
+  };
+  const ga4Page = (c: string) => {
+    const p = ga4Product(c);
+    if (p === "April") return "salary";
+    if (p) return "job";
+    return "other";
+  };
 
   const sessBySource = new Map<string, number>();
   for (const d of ga4Days) sessBySource.set(d.source, (sessBySource.get(d.source) ?? 0) + d.sessions);
@@ -391,37 +396,27 @@ export default function Overview({ meta, ga4, sns, missingKey }: { meta: MetaDay
   const directS = srcVal("direct");
   const referralS = srcVal("referral");
   const otherBucket = Math.max(0, traffic.other - directS - referralS);
-  const topSources = [...sessBySource.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([name, value]) => ({ name, value }));
 
-  const clicksOf = (p: string) => days.filter((d) => d.product === p).reduce((a, d) => a + d.clicks, 0);
-  const aprC = clicksOf("April");
-  const ktC = clicksOf("K-Tuvi");
-  const jpC = clicksOf("Job-page");
-  const prodDenom = aprC + ktC + jpC || 1;
-  const paidProd = (c: number) => Math.round((traffic.paid * c) / prodDenom);
+  const salarySessions = sessWhere((d) => ga4Page(d.campaign) === "salary");
+  const jobSessions = sessWhere((d) => ga4Page(d.campaign) === "job");
+  const otherSessions = sessWhere((d) => ga4Page(d.campaign) === "other");
+
+  const pageRows = (page: string) => [
+    { name: "Paid", value: sessWhere((d) => ga4Page(d.campaign) === page && d.channel === "paid") },
+    { name: "Organic SNS", value: sessWhere((d) => ga4Page(d.campaign) === page && d.channel === "organic") },
+    { name: "Direct", value: sessWhere((d) => ga4Page(d.campaign) === page && d.source === "direct") },
+  ];
+
+  const otherSrc = new Map<string, number>();
+  for (const d of ga4Days) if (ga4Page(d.campaign) === "other") otherSrc.set(d.source, (otherSrc.get(d.source) ?? 0) + d.sessions);
+  const otherTopSources = [...otherSrc.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([name, value]) => ({ name, value }));
+
+  const paidProductSess = (p: string) => sessWhere((d) => d.channel === "paid" && ga4Product(d.campaign) === p);
 
   const sessionDonut: Seg[] = [
-    {
-      name: "Salary page",
-      value: salarySessions,
-      color: "#7F77DD",
-      rows: [
-        { name: "Paid", value: Math.round(traffic.paid * salaryRatio) },
-        { name: "Organic SNS", value: Math.round(traffic.organic * salaryRatio) },
-        { name: "Direct", value: Math.round(directS * salaryRatio) },
-      ],
-    },
-    {
-      name: "Job page",
-      value: jobSessions,
-      color: "#1D9E75",
-      rows: [
-        { name: "Paid", value: Math.round(traffic.paid * jobRatio) },
-        { name: "Organic SNS", value: Math.round(traffic.organic * jobRatio) },
-        { name: "Direct", value: Math.round(directS * jobRatio) },
-      ],
-    },
-    { name: "Other", value: otherSessions, color: "#94a3b8", rows: topSources },
+    { name: "Salary page", value: salarySessions, color: "#7F77DD", rows: pageRows("salary") },
+    { name: "Job page", value: jobSessions, color: "#1D9E75", rows: pageRows("job") },
+    { name: "Other", value: otherSessions, color: "#94a3b8", rows: otherTopSources },
   ];
 
   const trafficDonut: Seg[] = [
@@ -430,9 +425,9 @@ export default function Overview({ meta, ga4, sns, missingKey }: { meta: MetaDay
       value: traffic.paid,
       color: "#7F77DD",
       rows: [
-        { name: "April", value: paidProd(aprC) },
-        { name: "K-Tuvi", value: paidProd(ktC) },
-        { name: "Job-page", value: paidProd(jpC) },
+        { name: "April", value: paidProductSess("April") },
+        { name: "K-Tuvi", value: paidProductSess("K-Tuvi") },
+        { name: "Job-page", value: paidProductSess("Job-page") },
       ],
     },
     {

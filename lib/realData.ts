@@ -49,6 +49,7 @@ export interface Ga4Day {
   week: string;
   channel: Ga4Channel;
   source: string;
+  campaign: string;
   sessions: number;
   conversions: number;
 }
@@ -68,6 +69,7 @@ export async function getGa4Days(): Promise<Ga4Day[]> {
         week: weekLabel(date),
         channel,
         source: src,
+        campaign: String(r[3] ?? ""),
         sessions: intNum(r[4]),
         conversions: intNum(r[10]),
       };
