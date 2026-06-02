@@ -177,6 +177,7 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
   const [notes, setNotes] = useState<Note[]>([]);
   const [noteDate, setNoteDate] = useState(start);
   const [noteText, setNoteText] = useState("");
+  const [noteError, setNoteError] = useState<string | null>(null);
 
   const [targets, setTargets] = useState<Record<string, number>>(DEFAULT_TARGETS);
 
@@ -352,12 +353,22 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
   );
 
   const addNote = async () => {
-    if (!supabase || !noteDate || !noteText.trim()) return;
-    const { error } = await supabase.from("optimization_log").insert({ date: noteDate, campaign, note: noteText.trim() });
-    if (!error) {
-      setNoteText("");
-      loadNotes();
+    setNoteError(null);
+    if (!supabase) {
+      setNoteError("Supabase chưa kết nối.");
+      return;
     }
+    if (!noteDate || !noteText.trim()) {
+      setNoteError("Nhập ngày và nội dung note.");
+      return;
+    }
+    const { error } = await supabase.from("optimization_log").insert({ date: noteDate, campaign, note: noteText.trim() });
+    if (error) {
+      setNoteError(error.message);
+      return;
+    }
+    setNoteText("");
+    loadNotes();
   };
 
   if (days.length === 0) {
@@ -451,6 +462,7 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
               Add
             </button>
           </div>
+          {noteError && <p className="mt-2 text-[11px] text-red-500">{noteError}</p>}
         </Section>
       </div>
 
