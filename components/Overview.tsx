@@ -137,7 +137,7 @@ function useLocalStorage<T>(key: string, initial: T): [T, (v: T) => void] {
 
 function Card({ label, link, children }: { label?: string; link?: { href: string; text: string }; children: ReactNode }) {
   return (
-    <div className="rounded-lg bg-white" style={{ border: "0.5px solid #e2e8f0", padding: "13px 15px" }}>
+    <div className="rounded-lg bg-white" style={{ border: "0.5px solid #e2e8f0", padding: "11px 13px" }}>
       {label && (
         <div className="mb-2.5 flex items-center justify-between">
           <p className="text-[10px] font-medium uppercase tracking-[0.06em] text-slate-400">{label}</p>
@@ -371,7 +371,7 @@ export default function Overview({ meta, ga4, sns, missingKey }: { meta: MetaDay
         </div>
       )}
 
-      <div className="grid items-start gap-3" style={{ gridTemplateColumns: "minmax(0,1fr) 340px" }}>
+      <div className="grid items-start gap-3" style={{ gridTemplateColumns: "minmax(0, 3fr) minmax(0, 2fr)" }}>
         <div className="space-y-3">
           <Card label="Monthly target progress">
             <div className="space-y-3">
