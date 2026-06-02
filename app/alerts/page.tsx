@@ -75,7 +75,7 @@ export default async function AlertsPage() {
                 </div>
                 <div className={["mt-3 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-sm font-bold", positive ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-600"].join(" ")}>
                   {positive ? <ArrowUpRight className="h-4 w-4" /> : <ArrowDownRight className="h-4 w-4" />}
-                  {formatPct(alert.pct)}
+                  {formatPct(alert.pct * 100)}
                 </div>
                 <div className="mt-3 flex items-center gap-2 text-sm text-slate-500">
                   <span>{formatValue(alert.previous, alert.unit)}</span>

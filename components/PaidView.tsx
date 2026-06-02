@@ -25,7 +25,7 @@ import {
   inRange,
   metaTotals,
 } from "@/lib/aggregate";
-import { formatDateShort, formatNumber, formatPercent, formatVnd } from "@/lib/format";
+import { formatDateShort, formatKRW, formatNumber, formatPercent } from "@/lib/format";
 
 const PAID_SOURCES = ["MT", "meta"];
 const TABS: Campaign[] = ["All", "Salary Page", "Job Page"];
@@ -287,7 +287,7 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
   const prevCostSub = prevSubs ? Math.round(prevCamp.spend / prevSubs) : 0;
 
   const cards = [
-    { label: "Spend ₫", value: camp.spend, kind: "vnd", prev: prevCamp.spend },
+    { label: "Spend ₩", value: camp.spend, kind: "vnd", prev: prevCamp.spend },
     { label: "Sessions", value: metaSessions, kind: "count", prev: prevSessions },
     { label: "Submissions", value: totalPaidSubmissions, kind: "count", prev: prevSubs },
     { label: "Job apps", value: totalJobApps, kind: "count", prev: prevJobs },
@@ -295,7 +295,7 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
     { label: "CTR%", value: camp.ctr, kind: "pct", prev: prevCamp.ctr },
   ];
 
-  const fmt = (v: number, kind: string) => (kind === "vnd" ? formatVnd(v) : kind === "pct" ? (v * 100).toFixed(2) : formatNumber(v));
+  const fmt = (v: number, kind: string) => (kind === "vnd" ? formatKRW(v) : kind === "pct" ? (v * 100).toFixed(2) : formatNumber(v));
 
   const actuals: Record<string, number> = {
     Submissions: totalPaidSubmissions,
@@ -342,10 +342,10 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
     { key: "rank", label: "Rank", align: "left" },
     { key: "adName", label: "Ad name", align: "left" },
     { key: "audience", label: "Audience", align: "left" },
-    { key: "spend", label: "Spend", align: "right", fmt: formatVnd },
+    { key: "spend", label: "Spend", align: "right", fmt: formatKRW },
     { key: "sessions", label: "Sessions", align: "right", fmt: formatNumber },
     { key: "leads", label: creativeTab === "Job Page" ? "Job apps" : "Subs", align: "right", fmt: formatNumber },
-    { key: "cpl", label: creativeTab === "Job Page" ? "Cost/app" : "Cost/sub", align: "right", fmt: formatVnd },
+    { key: "cpl", label: creativeTab === "Job Page" ? "Cost/app" : "Cost/sub", align: "right", fmt: formatKRW },
     { key: "ctr", label: "CTR", align: "right", fmt: formatPercent },
   ];
 
@@ -512,7 +512,7 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
                         style={{ borderWidth: 0.5, borderStyle: "solid" }}
                       />
                     </td>
-                    <td className="py-1.5 text-right text-slate-600">{kpi.kind === "vnd" ? formatVnd(actual) : formatNumber(actual)}</td>
+                    <td className="py-1.5 text-right text-slate-600">{kpi.kind === "vnd" ? formatKRW(actual) : formatNumber(actual)}</td>
                     <td className="py-1.5 text-right">
                       <span className={["inline-flex rounded-full px-2 py-0.5 text-[10px] font-normal", achClass(pct)].join(" ")}>{pct.toFixed(0)}%</span>
                     </td>
@@ -588,7 +588,7 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
                 <div className="flex-1">
                   <div className="rounded-full" style={{ height: 6, width: `${(a.spend / audienceMax) * 100}%`, backgroundColor: "#7c3aed" }} />
                 </div>
-                <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-normal text-slate-600">{formatVnd(a.cpl)} CPL</span>
+                <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-normal text-slate-600">{formatKRW(a.cpl)} CPL</span>
               </div>
             ))}
           </div>

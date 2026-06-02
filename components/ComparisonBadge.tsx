@@ -32,7 +32,7 @@ export default function ComparisonBadge({
         ) : (
           <ArrowDownRight className="h-3.5 w-3.5" />
         )}
-        {formatPct(pct)}
+        {formatPct(pct * 100)}
       </span>
       <p className="text-[11px] text-slate-400">vs {periodLabel}</p>
     </div>

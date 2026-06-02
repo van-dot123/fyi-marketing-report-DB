@@ -1,5 +1,5 @@
 import { topAds } from "@/lib/mockData";
-import { formatCurrency, formatNumber } from "@/lib/format";
+import { formatKRW, formatNumber } from "@/lib/format";
 
 export default function CreativePerformance() {
   return (
@@ -30,7 +30,7 @@ export default function CreativePerformance() {
                 {formatNumber(ad.leads)}
               </td>
               <td className="py-3 text-right font-medium text-slate-800">
-                {formatCurrency(ad.cpl)}
+                {formatKRW(ad.cpl)}
               </td>
             </tr>
           ))}
