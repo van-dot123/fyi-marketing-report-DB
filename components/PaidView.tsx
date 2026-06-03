@@ -172,7 +172,17 @@ function noteColor(note: string): string {
 }
 
 function markerLabel(note: string): string {
-  return note.length > 20 ? `${note.slice(0, 20)}…` : note;
+  return note.length > 16 ? `${note.slice(0, 16)}…` : note;
+}
+
+function NoteLabel(props: any) {
+  const { viewBox, value, row, color } = props;
+  if (!viewBox) return null;
+  return (
+    <text x={viewBox.x} y={viewBox.y + 6 + (row ?? 0) * 11} textAnchor="middle" fontSize={9} fill={color}>
+      {value}
+    </text>
+  );
 }
 
 function audienceBreakdown(days: MetaDay[]) {
@@ -392,6 +402,12 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
   }, [dates, days, campaign, subRows, jobRows, startMs, endMs]);
 
   const rangeNotes = notes.filter((n) => n.date >= start && n.date <= end);
+  const markerRowSeen = new Map<string, number>();
+  const markers = rangeNotes.map((n) => {
+    const row = markerRowSeen.get(n.date) ?? 0;
+    markerRowSeen.set(n.date, row + 1);
+    return { date: n.date, note: n.note, row: row % 3, color: noteColor(n.note) };
+  });
 
   const creatives = useMemo(
     () => allCreatives.filter((c) => campaignProducts(creativeTab).includes(c.product)),
@@ -508,14 +524,14 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
                 <Bar yAxisId="left" dataKey="spend" name="Spend" fill="#cbd5e1" radius={[3, 3, 0, 0]} barSize={14} />
                 <Line yAxisId="right" type="monotone" dataKey="submissions" name="Submissions" stroke="#7c3aed" strokeWidth={2} dot={false} />
                 <Line yAxisId="right" type="monotone" dataKey="jobApps" name="Job apps" stroke="#14b8a6" strokeWidth={2} strokeDasharray="5 4" dot={false} />
-                {rangeNotes.map((n, i) => (
+                {markers.map((m, i) => (
                   <ReferenceLine
-                    key={`${n.date}-${i}`}
+                    key={`${m.date}-${i}`}
                     yAxisId="left"
-                    x={dayMs(n.date)}
-                    stroke={noteColor(n.note)}
+                    x={dayMs(m.date)}
+                    stroke={m.color}
                     strokeDasharray="4 4"
-                    label={{ value: markerLabel(n.note), position: "top", fontSize: 9, fill: noteColor(n.note) }}
+                    label={<NoteLabel value={markerLabel(m.note)} row={m.row} color={m.color} />}
                   />
                 ))}
               </ComposedChart>

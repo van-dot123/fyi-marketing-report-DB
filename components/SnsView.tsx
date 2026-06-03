@@ -62,7 +62,17 @@ const DEFAULT_TARGETS: Record<string, number> = {
 };
 
 function markerLabel(note: string): string {
-  return note.length > 20 ? `${note.slice(0, 20)}…` : note;
+  return note.length > 16 ? `${note.slice(0, 16)}…` : note;
+}
+
+function NoteLabel(props: any) {
+  const { viewBox, value, row } = props;
+  if (!viewBox) return null;
+  return (
+    <text x={viewBox.x} y={viewBox.y + 6 + (row ?? 0) * 11} textAnchor="middle" fontSize={9} fill={SNS_NOTE_COLOR}>
+      {value}
+    </text>
+  );
 }
 
 function achClass(pct: number): string {
@@ -236,11 +246,13 @@ export default function SnsView({ posts, followers, ga4 }: { posts: SnsPostRow[]
     const vm = new Map<string, number>();
     for (const p of tabPosts) vm.set(p.date, (vm.get(p.date) ?? 0) + p.views);
     const sm = new Map<string, number>();
+    const tm = new Map<string, number>();
     for (const d of ga4Days) {
+      if (ORGANIC.has(d.source)) tm.set(d.date, (tm.get(d.date) ?? 0) + d.sessions);
       const ok = tab === "All" ? ORGANIC.has(d.source) : d.source === PLATFORM_SOURCE[tab];
       if (ok) sm.set(d.date, (sm.get(d.date) ?? 0) + d.sessions);
     }
-    return dates.map((d) => ({ ts: dayMs(d), views: vm.get(d) ?? 0, sessions: sm.get(d) ?? 0 })).filter((p) => p.ts >= startMs && p.ts <= endMs);
+    return dates.map((d) => ({ ts: dayMs(d), views: vm.get(d) ?? 0, sessions: sm.get(d) ?? 0, totalSessions: tm.get(d) ?? 0 })).filter((p) => p.ts >= startMs && p.ts <= endMs);
   }, [tabPosts, ga4Days, tab, dates, startMs, endMs]);
 
   const topContent = useMemo(
@@ -253,6 +265,12 @@ export default function SnsView({ posts, followers, ga4 }: { posts: SnsPostRow[]
   );
 
   const rangeNotes = notes.filter((n) => n.date >= start && n.date <= end);
+  const markerRowSeen = new Map<string, number>();
+  const markers = rangeNotes.map((n) => {
+    const row = markerRowSeen.get(n.date) ?? 0;
+    markerRowSeen.set(n.date, row + 1);
+    return { date: n.date, note: n.note, row: row % 3 };
+  });
 
   if (ranged.length === 0) {
     return <EmptyState title="No posts in range" message="No SNS posts for the selected dates." />;
@@ -302,15 +320,18 @@ export default function SnsView({ posts, followers, ga4 }: { posts: SnsPostRow[]
                 <YAxis yAxisId="right" orientation="right" tickLine={false} axisLine={false} tick={{ fill: "#94a3b8", fontSize: 10 }} />
                 <Tooltip labelFormatter={(d) => fmtTick(Number(d))} formatter={(v: number) => formatNumber(v)} contentStyle={{ borderRadius: 8, border: "0.5px solid #e2e8f0", fontSize: 11 }} />
                 <Bar yAxisId="left" dataKey="views" name="Views" fill="#7c3aed" radius={[3, 3, 0, 0]} barSize={12} />
-                <Line yAxisId="right" type="monotone" dataKey="sessions" name="Sessions" stroke="#14b8a6" strokeWidth={2} dot={false} />
-                {rangeNotes.map((n, i) => (
+                <Line yAxisId="right" type="monotone" dataKey="sessions" name={tab === "All" ? "Sessions" : `${tab} sessions`} stroke="#14b8a6" strokeWidth={2} dot={false} />
+                {tab !== "All" && (
+                  <Line yAxisId="right" type="monotone" dataKey="totalSessions" name="Total sessions" stroke="#94a3b8" strokeWidth={2} strokeDasharray="5 4" dot={false} />
+                )}
+                {markers.map((m, i) => (
                   <ReferenceLine
-                    key={`${n.date}-${i}`}
+                    key={`${m.date}-${i}`}
                     yAxisId="left"
-                    x={dayMs(n.date)}
+                    x={dayMs(m.date)}
                     stroke={SNS_NOTE_COLOR}
                     strokeDasharray="4 4"
-                    label={{ value: markerLabel(n.note), position: "top", fontSize: 9, fill: SNS_NOTE_COLOR }}
+                    label={<NoteLabel value={markerLabel(m.note)} row={m.row} />}
                   />
                 ))}
               </ComposedChart>
