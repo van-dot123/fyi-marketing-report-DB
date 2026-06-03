@@ -51,7 +51,6 @@ type SortKey = "adName" | "audience" | "spend" | "sessions" | "leads" | "cpl" | 
 
 interface Note {
   date: string;
-  campaign: string;
   note: string;
 }
 
@@ -172,12 +171,6 @@ function noteColor(note: string): string {
   return "#f59e0b";
 }
 
-function markerColor(campaign: string): string {
-  if (campaign === "Salary Page") return "#BA7517";
-  if (campaign === "Job Page") return "#534AB7";
-  return "#1D9E75";
-}
-
 function markerLabel(note: string): string {
   return note.length > 20 ? `${note.slice(0, 20)}…` : note;
 }
@@ -287,7 +280,7 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
     if (!supabase) return;
     supabase
       .from("optimization_log")
-      .select("date, campaign, note")
+      .select("date, note")
       .eq("page", "paid")
       .order("date", { ascending: false })
       .then(({ data, error }) => {
@@ -296,7 +289,7 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
           return;
         }
         console.log(`[paid] optimization_log rows: ${(data ?? []).length}`);
-        setNotes((data ?? []).map((r: any) => ({ date: String(r.date).slice(0, 10), campaign: r.campaign ?? "", note: r.note ?? "" })));
+        setNotes((data ?? []).map((r: any) => ({ date: String(r.date).slice(0, 10), note: r.note ?? "" })));
       });
   }, []);
 
@@ -457,7 +450,7 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
       setNoteError("Nhập ngày và nội dung note.");
       return;
     }
-    const { error } = await supabase.from("optimization_log").insert({ date: noteDate, page: "paid", campaign, note: noteText.trim() });
+    const { error } = await supabase.from("optimization_log").insert({ date: noteDate, page: "paid", note: noteText.trim() });
     if (error) {
       setNoteError(error.message);
       return;
@@ -520,9 +513,9 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
                     key={`${n.date}-${i}`}
                     yAxisId="left"
                     x={dayMs(n.date)}
-                    stroke={markerColor(n.campaign)}
+                    stroke={noteColor(n.note)}
                     strokeDasharray="4 4"
-                    label={{ value: markerLabel(n.note), position: "top", fontSize: 9, fill: markerColor(n.campaign) }}
+                    label={{ value: markerLabel(n.note), position: "top", fontSize: 9, fill: noteColor(n.note) }}
                   />
                 ))}
               </ComposedChart>
@@ -535,10 +528,7 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
             {notes.length === 0 && <p className="text-xs text-slate-400">No notes yet.</p>}
             {notes.map((n, i) => (
               <div key={`${n.date}-${i}`} className="rounded-r-md bg-slate-50 px-3 py-2" style={{ borderLeftWidth: 2, borderLeftStyle: "solid", borderLeftColor: noteColor(n.note) }}>
-                <p className="text-[10px] font-normal text-slate-400">
-                  {formatDateShort(n.date)}
-                  {n.campaign ? ` · ${n.campaign}` : ""}
-                </p>
+                <p className="text-[10px] font-normal text-slate-400">{formatDateShort(n.date)}</p>
                 <p className="text-xs font-normal text-slate-700">{n.note}</p>
               </div>
             ))}

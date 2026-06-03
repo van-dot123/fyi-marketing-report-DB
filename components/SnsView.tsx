@@ -38,13 +38,10 @@ interface Cell {
 
 interface Note {
   date: string;
-  campaign: string;
   note: string;
 }
 
-function snsMarkerColor(campaign: string): string {
-  return PLATFORM_COLORS[campaign as SnsPlatform] ?? "#7c3aed";
-}
+const SNS_NOTE_COLOR = "#1D9E75";
 
 function markerLabel(note: string): string {
   return note.length > 20 ? `${note.slice(0, 20)}…` : note;
@@ -106,7 +103,7 @@ export default function SnsView({ posts, followers, ga4 }: { posts: SnsPostRow[]
     if (!supabase) return;
     supabase
       .from("optimization_log")
-      .select("date, campaign, note")
+      .select("date, note")
       .eq("page", "sns")
       .order("date", { ascending: false })
       .then(({ data, error }) => {
@@ -114,7 +111,7 @@ export default function SnsView({ posts, followers, ga4 }: { posts: SnsPostRow[]
           console.warn("[sns] optimization_log unavailable", error.message);
           return;
         }
-        setNotes((data ?? []).map((r: any) => ({ date: String(r.date).slice(0, 10), campaign: r.campaign ?? "", note: r.note ?? "" })));
+        setNotes((data ?? []).map((r: any) => ({ date: String(r.date).slice(0, 10), note: r.note ?? "" })));
       });
   }, []);
 
@@ -132,7 +129,7 @@ export default function SnsView({ posts, followers, ga4 }: { posts: SnsPostRow[]
       setNoteError("Enter a date and note.");
       return;
     }
-    const { error } = await supabase.from("optimization_log").insert({ date: noteDate, page: "sns", campaign: tab, note: noteText.trim() });
+    const { error } = await supabase.from("optimization_log").insert({ date: noteDate, page: "sns", note: noteText.trim() });
     if (error) {
       setNoteError(error.message);
       return;
@@ -237,9 +234,9 @@ export default function SnsView({ posts, followers, ga4 }: { posts: SnsPostRow[]
                     key={`${n.date}-${i}`}
                     yAxisId="left"
                     x={dayMs(n.date)}
-                    stroke={snsMarkerColor(n.campaign)}
+                    stroke={SNS_NOTE_COLOR}
                     strokeDasharray="4 4"
-                    label={{ value: markerLabel(n.note), position: "top", fontSize: 9, fill: snsMarkerColor(n.campaign) }}
+                    label={{ value: markerLabel(n.note), position: "top", fontSize: 9, fill: SNS_NOTE_COLOR }}
                   />
                 ))}
               </ComposedChart>
@@ -251,11 +248,8 @@ export default function SnsView({ posts, followers, ga4 }: { posts: SnsPostRow[]
           <div className="space-y-2">
             {notes.length === 0 && <p className="text-xs text-slate-400">No notes yet.</p>}
             {notes.map((n, i) => (
-              <div key={`${n.date}-${i}`} className="rounded-r-md bg-slate-50 px-3 py-1.5" style={{ borderLeftWidth: 2, borderLeftStyle: "solid", borderLeftColor: snsMarkerColor(n.campaign) }}>
-                <p className="text-[10px] text-slate-400">
-                  {fmtTick(dayMs(n.date))}
-                  {n.campaign ? ` · ${n.campaign}` : ""}
-                </p>
+              <div key={`${n.date}-${i}`} className="rounded-r-md bg-slate-50 px-3 py-1.5" style={{ borderLeftWidth: 2, borderLeftStyle: "solid", borderLeftColor: SNS_NOTE_COLOR }}>
+                <p className="text-[10px] text-slate-400">{fmtTick(dayMs(n.date))}</p>
                 <p className="text-xs text-slate-700">{n.note}</p>
               </div>
             ))}

@@ -24,9 +24,8 @@ import { PLATFORM_COLORS, filterByCampaign, inRange, metaTotals, paidCreatives, 
 import { formatKRW, formatNumber, formatPercent, formatPeriod } from "@/lib/format";
 
 const TARGETS_KEY = "fyi-monthly-targets";
-const LOG_TYPES = ["Paid", "SNS", "Product"] as const;
-const LOG_TABS = ["All", ...LOG_TYPES];
-const TYPE_COLOR: Record<string, string> = { Paid: "#BA7517", SNS: "#1D9E75", Product: "#534AB7" };
+const LOG_TABS = ["All", "Paid", "SNS"];
+const TYPE_COLOR: Record<string, string> = { paid: "#BA7517", sns: "#1D9E75" };
 
 const TARGET_KPIS: { key: string; kind: "count" | "krw"; lowerBetter: boolean }[] = [
   { key: "Submissions", kind: "count", lowerBetter: false },
@@ -320,14 +319,14 @@ export default function Overview({ meta, ga4, sns, missingKey }: { meta: MetaDay
     if (!supabase) return;
     supabase
       .from("optimization_log")
-      .select("date, campaign, note")
+      .select("date, page, note")
       .order("date", { ascending: false })
       .then(({ data, error }) => {
         if (error) {
           console.warn("[overview] optimization_log unavailable", error.message);
           return;
         }
-        setNotes((data ?? []).map((r: any) => ({ date: String(r.date).slice(0, 10), type: r.campaign ?? "", note: r.note ?? "" })));
+        setNotes((data ?? []).map((r: any) => ({ date: String(r.date).slice(0, 10), type: r.page ?? "", note: r.note ?? "" })));
       });
   }, []);
 
@@ -378,7 +377,7 @@ export default function Overview({ meta, ga4, sns, missingKey }: { meta: MetaDay
   }, [dates, days, subs, jobs, signups, startMs, endMs]);
 
   const rangeNotes = notes.filter((n) => n.date >= start && n.date <= end);
-  const sortedLogs = [...(logTab === "All" ? rangeNotes : rangeNotes.filter((n) => n.type === logTab))].sort((a, b) => b.date.localeCompare(a.date));
+  const sortedLogs = [...(logTab === "All" ? rangeNotes : rangeNotes.filter((n) => n.type === logTab.toLowerCase()))].sort((a, b) => b.date.localeCompare(a.date));
   const visibleLogs = showAllLogs ? sortedLogs : sortedLogs.slice(0, 5);
 
   const actuals: Record<string, number> = {
