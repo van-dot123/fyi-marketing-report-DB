@@ -198,16 +198,32 @@ interface Seg {
   rows: { name: string; value: number }[];
 }
 
-function DonutTooltip({ active, payload }: any) {
+function DonutTooltip({ active, payload, coordinate }: any) {
   if (!active || !payload || !payload.length) return null;
   const seg = payload[0].payload as Seg;
+  const total = (seg.rows ?? []).reduce((a: number, r: { value: number }) => a + r.value, 0);
+  const onLeft = (coordinate?.x ?? 60) < 60;
   return (
-    <div style={{ background: "#ffffff", border: "0.5px solid #cbd5e1", borderRadius: 6, padding: "8px 10px", fontSize: 11 }}>
+    <div
+      style={{
+        transform: onLeft ? "translate(16px, -50%)" : "translate(calc(-100% - 16px), -50%)",
+        background: "#ffffff",
+        border: "0.5px solid #cbd5e1",
+        borderRadius: 6,
+        padding: "8px 10px",
+        fontSize: 11,
+        whiteSpace: "nowrap",
+        pointerEvents: "none",
+        boxShadow: "0 2px 8px rgba(15,23,42,0.08)",
+      }}
+    >
       <p className="mb-1 font-medium text-slate-700">{seg.name}</p>
       {(seg.rows ?? []).map((r) => (
         <div key={r.name} className="flex justify-between gap-4">
           <span className="text-slate-500">{r.name}</span>
-          <span className="font-bold tabular-nums text-slate-800">{formatNumber(r.value)}</span>
+          <span className="font-bold tabular-nums text-slate-800">
+            {formatNumber(r.value)} · {total ? Math.round((r.value / total) * 100) : 0}%
+          </span>
         </div>
       ))}
     </div>
@@ -220,7 +236,7 @@ function DonutBlock({ data, total }: { data: Seg[]; total: number }) {
       <div className="mx-auto" style={{ width: 120, height: 120 }}>
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
-            <Tooltip content={<DonutTooltip />} cursor={false} />
+            <Tooltip content={<DonutTooltip />} cursor={false} offset={0} allowEscapeViewBox={{ x: true, y: true }} wrapperStyle={{ zIndex: 50, pointerEvents: "none" }} />
             <Pie data={data} dataKey="value" nameKey="name" innerRadius={36} outerRadius={56} paddingAngle={2} stroke="none">
               {data.map((d) => (
                 <Cell key={d.name} fill={d.color} />
@@ -401,13 +417,6 @@ export default function Overview({ meta, ga4, sns, missingKey }: { meta: MetaDay
     if (s.includes("job")) return "Job-page";
     return "";
   };
-  const ga4Page = (c: string) => {
-    const p = ga4Product(c);
-    if (p === "April") return "salary";
-    if (p) return "job";
-    return "other";
-  };
-
   const sessBySource = new Map<string, number>();
   for (const d of ga4Days) sessBySource.set(d.source, (sessBySource.get(d.source) ?? 0) + d.sessions);
   const srcVal = (s: string) => sessBySource.get(s) ?? 0;
@@ -415,26 +424,30 @@ export default function Overview({ meta, ga4, sns, missingKey }: { meta: MetaDay
   const referralS = srcVal("referral");
   const otherBucket = Math.max(0, traffic.other - directS - referralS);
 
-  const salarySessions = sessWhere((d) => ga4Page(d.campaign) === "salary");
-  const jobSessions = sessWhere((d) => ga4Page(d.campaign) === "job");
-  const otherSessions = sessWhere((d) => ga4Page(d.campaign) === "other");
+  const pageOf = (lp: string) => (lp === "/" ? "salary" : lp === "/jobs" ? "job" : "other");
+  const SOURCE_BUCKETS = ["meta", "facebook", "instagram", "threads", "google"];
+  const sourceBucket = (s: string) => (SOURCE_BUCKETS.includes(s) ? s : "other");
 
-  const pageRows = (page: string) => [
-    { name: "Paid", value: sessWhere((d) => ga4Page(d.campaign) === page && d.channel === "paid") },
-    { name: "Organic SNS", value: sessWhere((d) => ga4Page(d.campaign) === page && d.channel === "organic") },
-    { name: "Direct", value: sessWhere((d) => ga4Page(d.campaign) === page && d.source === "direct") },
-  ];
+  const salarySessions = sessWhere((d) => pageOf(d.landingPage) === "salary");
+  const jobSessions = sessWhere((d) => pageOf(d.landingPage) === "job");
+  const otherSessions = sessWhere((d) => pageOf(d.landingPage) === "other");
 
-  const otherSrc = new Map<string, number>();
-  for (const d of ga4Days) if (ga4Page(d.campaign) === "other") otherSrc.set(d.source, (otherSrc.get(d.source) ?? 0) + d.sessions);
-  const otherTopSources = [...otherSrc.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([name, value]) => ({ name, value }));
+  const pageSourceRows = (page: string) => {
+    const m = new Map<string, number>();
+    for (const d of ga4Days) {
+      if (pageOf(d.landingPage) !== page) continue;
+      const k = sourceBucket(d.source);
+      m.set(k, (m.get(k) ?? 0) + d.sessions);
+    }
+    return [...m.entries()].map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
+  };
 
   const paidProductSess = (p: string) => sessWhere((d) => d.channel === "paid" && ga4Product(d.campaign) === p);
 
   const sessionDonut: Seg[] = [
-    { name: "Salary page", value: salarySessions, color: "#7F77DD", rows: pageRows("salary") },
-    { name: "Job page", value: jobSessions, color: "#1D9E75", rows: pageRows("job") },
-    { name: "Other", value: otherSessions, color: "#94a3b8", rows: otherTopSources },
+    { name: "Salary page", value: salarySessions, color: "#7F77DD", rows: pageSourceRows("salary") },
+    { name: "Job page", value: jobSessions, color: "#1D9E75", rows: pageSourceRows("job") },
+    { name: "Other", value: otherSessions, color: "#94a3b8", rows: pageSourceRows("other") },
   ];
 
   const trafficDonut: Seg[] = [
