@@ -26,7 +26,7 @@ import {
   snsPlatforms,
   snsTotals,
 } from "@/lib/aggregate";
-import { Unit, formatNumber, formatValue } from "@/lib/format";
+import { Unit, formatNumber, formatPercent, formatValue } from "@/lib/format";
 
 const PLATFORM_SOURCE: Record<string, string> = { Facebook: "facebook", Instagram: "instagram", Threads: "threads" };
 const ORGANIC = new Set(["facebook", "instagram", "threads"]);
@@ -43,8 +43,37 @@ interface Note {
 
 const SNS_NOTE_COLOR = "#1D9E75";
 
+const TARGET_KPIS: { key: string; percent?: boolean }[] = [
+  { key: "View" },
+  { key: "Frequency" },
+  { key: "Interaction" },
+  { key: "Follower" },
+  { key: "Sessions" },
+  { key: "ER", percent: true },
+];
+
+const DEFAULT_TARGETS: Record<string, number> = {
+  View: 100000,
+  Frequency: 30,
+  Interaction: 3000,
+  Follower: 50000,
+  Sessions: 10000,
+  ER: 3,
+};
+
 function markerLabel(note: string): string {
   return note.length > 20 ? `${note.slice(0, 20)}…` : note;
+}
+
+function achClass(pct: number): string {
+  if (pct >= 100) return "bg-emerald-50 text-emerald-700";
+  if (pct >= 70) return "bg-amber-50 text-amber-700";
+  return "bg-red-50 text-red-700";
+}
+
+function targetAchievement(actual: number, target: number, percent?: boolean): number {
+  const a = percent ? actual * 100 : actual;
+  return target > 0 ? (a / target) * 100 : 0;
 }
 
 function eachDay(start: string, end: string): string[] {
@@ -98,6 +127,9 @@ export default function SnsView({ posts, followers, ga4 }: { posts: SnsPostRow[]
   const [noteDate, setNoteDate] = useState(start);
   const [noteText, setNoteText] = useState("");
   const [noteError, setNoteError] = useState<string | null>(null);
+  const [targets, setTargets] = useState<Record<string, number>>(DEFAULT_TARGETS);
+
+  const monthKey = `${start.slice(0, 7)}-01`;
 
   const loadNotes = useCallback(() => {
     if (!supabase) return;
@@ -138,6 +170,37 @@ export default function SnsView({ posts, followers, ga4 }: { posts: SnsPostRow[]
     loadNotes();
   };
 
+  const loadTargets = useCallback(() => {
+    if (!supabase) return;
+    supabase
+      .from("monthly_targets")
+      .select("kpi, target")
+      .eq("month", monthKey)
+      .then(({ data, error }) => {
+        if (error) {
+          console.warn("[sns] monthly_targets unavailable", error.message);
+          return;
+        }
+        const next = { ...DEFAULT_TARGETS };
+        for (const r of data ?? []) if (r.kpi in next) next[r.kpi] = Number(r.target);
+        setTargets(next);
+      });
+  }, [monthKey]);
+
+  useEffect(() => {
+    loadTargets();
+  }, [loadTargets]);
+
+  const saveTarget = useCallback(
+    async (kpi: string, value: number) => {
+      if (!supabase) return;
+      const { data } = await supabase.from("monthly_targets").select("id").eq("month", monthKey).eq("kpi", kpi).limit(1);
+      if (data && data.length) await supabase.from("monthly_targets").update({ target: value }).eq("id", data[0].id);
+      else await supabase.from("monthly_targets").insert({ month: monthKey, kpi, target: value });
+    },
+    [monthKey]
+  );
+
   const ranged = useMemo(() => inRange(posts, start, end), [posts, start, end]);
   const prevRanged = useMemo(() => inRange(posts, previousStart, previousEnd), [posts, previousStart, previousEnd]);
   const ga4Days = useMemo(() => inRange(ga4, start, end), [ga4, start, end]);
@@ -146,6 +209,17 @@ export default function SnsView({ posts, followers, ga4 }: { posts: SnsPostRow[]
   const prevTotals = prevRanged.length ? snsTotals(prevRanged, tab) : null;
   const metrics = snsMetrics(ranged, tab);
   const heat = pillarHeatmap(ranged);
+
+  const totals = snsTotals(ranged, "All");
+  const orgSessions = ga4Days.filter((d) => ORGANIC.has(d.source)).reduce((a, d) => a + d.sessions, 0);
+  const actuals: Record<string, number> = {
+    View: totals.views,
+    Frequency: ranged.length,
+    Interaction: totals.interactions,
+    Follower: followers.Facebook + followers.Instagram + followers.Threads,
+    Sessions: orgSessions,
+    ER: totals.er,
+  };
 
   const followerTotal = tab === "All" ? followers.Facebook + followers.Instagram + followers.Threads : followers[tab] ?? 0;
   const cards: { label: string; value: number | null; unit: Unit; prev: number | null }[] = [
@@ -280,6 +354,45 @@ export default function SnsView({ posts, followers, ga4 }: { posts: SnsPostRow[]
       </div>
 
       <div className="w-2/5 space-y-4">
+        <Section label="Monthly targets">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-left text-[10px] font-medium uppercase tracking-[0.06em] text-slate-400">
+                <th className="pb-2 font-medium">KPI</th>
+                <th className="pb-2 text-right font-medium">Target</th>
+                <th className="pb-2 text-right font-medium">Actual</th>
+                <th className="pb-2 text-right font-medium">Achievement</th>
+              </tr>
+            </thead>
+            <tbody>
+              {TARGET_KPIS.map((kpi, i) => {
+                const target = targets[kpi.key] ?? 0;
+                const actual = actuals[kpi.key] ?? 0;
+                const pct = targetAchievement(actual, target, kpi.percent);
+                return (
+                  <tr key={kpi.key} className={i % 2 === 1 ? "bg-slate-50" : ""}>
+                    <td className="py-1.5 text-slate-700">{kpi.key}</td>
+                    <td className="py-1.5 text-right">
+                      <input
+                        type="number"
+                        value={target}
+                        onChange={(e) => setTargets({ ...targets, [kpi.key]: Number(e.target.value) })}
+                        onBlur={(e) => saveTarget(kpi.key, Number(e.target.value))}
+                        className="w-20 rounded-md px-1.5 py-1 text-right text-xs text-slate-700 outline-none focus:border-purple-500"
+                        style={{ border: "0.5px solid #e2e8f0" }}
+                      />
+                    </td>
+                    <td className="py-1.5 text-right text-slate-600">{kpi.percent ? formatPercent(actual) : formatNumber(actual)}</td>
+                    <td className="py-1.5 text-right">
+                      <span className={["inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium", achClass(pct)].join(" ")}>{pct.toFixed(0)}%</span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </Section>
+
         <Section label="Pillar performance">
           <p className="mb-2.5 text-[10px] text-slate-400">Views by pillar × platform — click a cell to filter posts</p>
           <div className="grid items-center gap-1 text-[10px]" style={{ gridTemplateColumns: `auto repeat(${heat.platforms.length}, 1fr)` }}>
