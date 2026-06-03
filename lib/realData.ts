@@ -21,14 +21,11 @@ export interface MetaDay {
   impressions: number;
 }
 
-const META_PRODUCTS = ["April", "Job-page", "K-Tuvi"];
-
 export async function getMetaDays(): Promise<MetaDay[]> {
   const rows = await safe("meta_ad_raw_data");
-  console.log("[meta-spend] sample row[0]:", rows[0]);
-  console.log("[meta-spend] col[9] sample:", rows[0]?.[9]);
+  console.log("[meta-spend] sample row[0] (index:value):", (rows[0] ?? []).map((v, i) => `${i}:${v}`));
   const result = rows
-    .filter((r) => META_PRODUCTS.includes(r[18] ?? ""))
+    .filter((r) => String(r[0] ?? "").toUpperCase().includes("FYI"))
     .map((r) => {
       const date = dayOf(r[3]);
       return {
