@@ -1,19 +1,21 @@
 "use client";
 
-import { ReactNode, useMemo, useState } from "react";
+import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import {
   Bar,
   CartesianGrid,
   ComposedChart,
   Line,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, Plus } from "lucide-react";
 import EmptyState from "@/components/EmptyState";
 import { useDateRange } from "@/components/DateRangePicker";
+import { supabase } from "@/lib/supabase";
 import { Ga4Day, SnsPlatform, SnsPostRow } from "@/lib/realData";
 import {
   PLATFORM_COLORS,
@@ -32,6 +34,20 @@ const ORGANIC = new Set(["facebook", "instagram", "threads"]);
 interface Cell {
   pillar: string;
   platform: SnsPlatform;
+}
+
+interface Note {
+  date: string;
+  campaign: string;
+  note: string;
+}
+
+function snsMarkerColor(campaign: string): string {
+  return PLATFORM_COLORS[campaign as SnsPlatform] ?? "#7c3aed";
+}
+
+function markerLabel(note: string): string {
+  return note.length > 20 ? `${note.slice(0, 20)}…` : note;
 }
 
 function eachDay(start: string, end: string): string[] {
@@ -76,10 +92,53 @@ function Wow({ value, previous }: { value: number | null; previous: number | nul
   );
 }
 
-export default function SnsView({ posts, ga4 }: { posts: SnsPostRow[]; ga4: Ga4Day[] }) {
+export default function SnsView({ posts, followers, ga4 }: { posts: SnsPostRow[]; followers: Record<SnsPlatform, number>; ga4: Ga4Day[] }) {
   const { start, end, previousStart, previousEnd } = useDateRange();
   const [tab, setTab] = useState<PlatformTab>("All");
   const [cell, setCell] = useState<Cell | null>(null);
+
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [noteDate, setNoteDate] = useState(start);
+  const [noteText, setNoteText] = useState("");
+  const [noteError, setNoteError] = useState<string | null>(null);
+
+  const loadNotes = useCallback(() => {
+    if (!supabase) return;
+    supabase
+      .from("optimization_log")
+      .select("date, campaign, note")
+      .order("date", { ascending: false })
+      .then(({ data, error }) => {
+        if (error) {
+          console.warn("[sns] optimization_log unavailable", error.message);
+          return;
+        }
+        setNotes((data ?? []).map((r: any) => ({ date: String(r.date).slice(0, 10), campaign: r.campaign ?? "", note: r.note ?? "" })));
+      });
+  }, []);
+
+  useEffect(() => {
+    loadNotes();
+  }, [loadNotes]);
+
+  const addNote = async () => {
+    setNoteError(null);
+    if (!supabase) {
+      setNoteError("Supabase not connected.");
+      return;
+    }
+    if (!noteDate || !noteText.trim()) {
+      setNoteError("Enter a date and note.");
+      return;
+    }
+    const { error } = await supabase.from("optimization_log").insert({ date: noteDate, campaign: tab, note: noteText.trim() });
+    if (error) {
+      setNoteError(error.message);
+      return;
+    }
+    setNoteText("");
+    loadNotes();
+  };
 
   const ranged = useMemo(() => inRange(posts, start, end), [posts, start, end]);
   const prevRanged = useMemo(() => inRange(posts, previousStart, previousEnd), [posts, previousStart, previousEnd]);
@@ -90,9 +149,10 @@ export default function SnsView({ posts, ga4 }: { posts: SnsPostRow[]; ga4: Ga4D
   const metrics = snsMetrics(ranged, tab);
   const heat = pillarHeatmap(ranged);
 
+  const followerTotal = tab === "All" ? followers.Facebook + followers.Instagram + followers.Threads : followers[tab] ?? 0;
   const cards: { label: string; value: number | null; unit: Unit; prev: number | null }[] = [
     ...metrics.map((m) => ({ label: m.label, value: m.value as number | null, unit: m.unit, prev: prevTotals ? prevTotals[m.key] : null })),
-    { label: "Followers", value: null, unit: "number", prev: null },
+    { label: "Followers", value: followerTotal, unit: "number", prev: null },
   ];
 
   const tabPosts = useMemo(() => ranged.filter((p) => tab === "All" || p.platform === tab), [ranged, tab]);
@@ -119,6 +179,8 @@ export default function SnsView({ posts, ga4 }: { posts: SnsPostRow[]; ga4: Ga4D
         .slice(0, 6),
     [tabPosts, cell]
   );
+
+  const rangeNotes = notes.filter((n) => n.date >= start && n.date <= end);
 
   if (ranged.length === 0) {
     return <EmptyState title="No posts in range" message="No SNS posts for the selected dates." />;
@@ -169,9 +231,56 @@ export default function SnsView({ posts, ga4 }: { posts: SnsPostRow[]; ga4: Ga4D
                 <Tooltip labelFormatter={(d) => fmtTick(Number(d))} formatter={(v: number) => formatNumber(v)} contentStyle={{ borderRadius: 8, border: "0.5px solid #e2e8f0", fontSize: 11 }} />
                 <Bar yAxisId="left" dataKey="views" name="Views" fill="#7c3aed" radius={[3, 3, 0, 0]} barSize={12} />
                 <Line yAxisId="right" type="monotone" dataKey="sessions" name="Sessions" stroke="#14b8a6" strokeWidth={2} dot={false} />
+                {rangeNotes.map((n, i) => (
+                  <ReferenceLine
+                    key={`${n.date}-${i}`}
+                    yAxisId="left"
+                    x={dayMs(n.date)}
+                    stroke={snsMarkerColor(n.campaign)}
+                    strokeDasharray="4 4"
+                    label={{ value: markerLabel(n.note), position: "top", fontSize: 9, fill: snsMarkerColor(n.campaign) }}
+                  />
+                ))}
               </ComposedChart>
             </ResponsiveContainer>
           </div>
+        </Section>
+
+        <Section label="Optimization log">
+          <div className="space-y-2">
+            {notes.length === 0 && <p className="text-xs text-slate-400">No notes yet.</p>}
+            {notes.map((n, i) => (
+              <div key={`${n.date}-${i}`} className="rounded-r-md bg-slate-50 px-3 py-1.5" style={{ borderLeftWidth: 2, borderLeftStyle: "solid", borderLeftColor: snsMarkerColor(n.campaign) }}>
+                <p className="text-[10px] text-slate-400">
+                  {fmtTick(dayMs(n.date))}
+                  {n.campaign ? ` · ${n.campaign}` : ""}
+                </p>
+                <p className="text-xs text-slate-700">{n.note}</p>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 flex flex-wrap items-end gap-2">
+            <input
+              type="date"
+              value={noteDate}
+              onChange={(e) => setNoteDate(e.target.value)}
+              className="rounded-md px-2 py-1.5 text-xs text-slate-700 outline-none focus:border-purple-500"
+              style={{ border: "0.5px solid #e2e8f0" }}
+            />
+            <input
+              type="text"
+              value={noteText}
+              onChange={(e) => setNoteText(e.target.value)}
+              placeholder="Add an optimization note"
+              className="min-w-[140px] flex-1 rounded-md px-3 py-1.5 text-xs text-slate-700 outline-none focus:border-purple-500"
+              style={{ border: "0.5px solid #e2e8f0" }}
+            />
+            <button onClick={addNote} className="inline-flex items-center gap-1 rounded-md bg-purple-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-purple-700">
+              <Plus className="h-3.5 w-3.5" />
+              Add
+            </button>
+          </div>
+          {noteError && <p className="mt-2 text-[11px] text-red-500">{noteError}</p>}
         </Section>
       </div>
 

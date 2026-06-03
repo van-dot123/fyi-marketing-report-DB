@@ -136,7 +136,12 @@ export interface SnsPostRow {
   url: string;
 }
 
-function mapMeta(r: string[], platform: SnsPlatform): SnsPostRow {
+function colIndex(headers: string[], name: string): number {
+  const lc = name.trim().toLowerCase();
+  return (headers ?? []).findIndex((h) => String(h ?? "").trim().toLowerCase() === lc);
+}
+
+function mapMeta(r: string[], platform: SnsPlatform, pillarIdx: number): SnsPostRow {
   const date = dayOf(r[0]);
   const interactions = intNum(r[5]);
   const comments = intNum(r[6]);
@@ -145,7 +150,7 @@ function mapMeta(r: string[], platform: SnsPlatform): SnsPostRow {
     platform,
     date,
     week: weekLabel(date),
-    pillar: r[10] || "Uncategorized",
+    pillar: (pillarIdx >= 0 ? r[pillarIdx] : "") || "Uncategorized",
     views: intNum(r[3]),
     reach: intNum(r[4]),
     interactions,
@@ -156,7 +161,7 @@ function mapMeta(r: string[], platform: SnsPlatform): SnsPostRow {
   };
 }
 
-function mapThreads(r: string[]): SnsPostRow {
+function mapThreads(r: string[], pillarIdx: number): SnsPostRow {
   const date = dayOf(r[0]);
   const likes = intNum(r[4]);
   const comments = intNum(r[5]);
@@ -168,7 +173,7 @@ function mapThreads(r: string[]): SnsPostRow {
     platform: "Threads",
     date,
     week: weekLabel(date),
-    pillar: r[10] || "Uncategorized",
+    pillar: (pillarIdx >= 0 ? r[pillarIdx] : "") || "Uncategorized",
     views,
     reach: views,
     interactions: likes + comments + reposts + quotes + shares,
@@ -179,15 +184,43 @@ function mapThreads(r: string[]): SnsPostRow {
   };
 }
 
+function lastFollower(rows: string[][]): number {
+  if (rows.length < 2) return 0;
+  const fIdx = colIndex(rows[0], "follower");
+  if (fIdx < 0) return 0;
+  for (let i = rows.length - 1; i >= 1; i--) {
+    const v = intNum(rows[i][fIdx]);
+    if (v > 0) return v;
+  }
+  return 0;
+}
+
+function snsPostsFrom(fb: string[][], ins: string[][], th: string[][]): SnsPostRow[] {
+  const pillar = (rows: string[][]) => colIndex(rows[0] ?? [], "Pillar");
+  return [
+    ...fb.slice(1).map((r) => mapMeta(r, "Facebook", pillar(fb))),
+    ...ins.slice(1).map((r) => mapMeta(r, "Instagram", pillar(ins))),
+    ...th.slice(1).map((r) => mapThreads(r, pillar(th))),
+  ].filter((p) => p.date);
+}
+
 export async function getSnsPosts(): Promise<SnsPostRow[]> {
   const [fb, ins, th] = await Promise.all([
-    safe("fb_post_metrics"),
-    safe("ins_post_metrics"),
-    safe("threads_post_metrics"),
+    safeRaw("fb_post_metrics"),
+    safeRaw("ins_post_metrics"),
+    safeRaw("threads_post_metrics"),
   ]);
-  return [
-    ...fb.map((r) => mapMeta(r, "Facebook")),
-    ...ins.map((r) => mapMeta(r, "Instagram")),
-    ...th.map(mapThreads),
-  ].filter((p) => p.date);
+  return snsPostsFrom(fb, ins, th);
+}
+
+export async function getSnsData(): Promise<{ posts: SnsPostRow[]; followers: Record<SnsPlatform, number> }> {
+  const [fb, ins, th] = await Promise.all([
+    safeRaw("fb_post_metrics"),
+    safeRaw("ins_post_metrics"),
+    safeRaw("threads_post_metrics"),
+  ]);
+  return {
+    posts: snsPostsFrom(fb, ins, th),
+    followers: { Facebook: lastFollower(fb), Instagram: lastFollower(ins), Threads: lastFollower(th) },
+  };
 }
