@@ -121,6 +121,32 @@ function dayEndISO(iso: string): string {
   return d.toISOString();
 }
 
+async function fetchRows(table: string, lo: string, hi: string, paidOnly: boolean): Promise<{ date: string; source: string }[] | null> {
+  if (!supabase) return null;
+  const out: { date: string; source: string }[] = [];
+  const size = 1000;
+  let from = 0;
+  for (;;) {
+    let q = supabase.from(table).select("created_at, source").gte("created_at", lo).lte("created_at", hi).order("created_at", { ascending: true });
+    if (paidOnly) q = q.in("source", PAID_SOURCES);
+    const { data, error } = await q.range(from, from + size - 1);
+    if (error) return null;
+    const rows = data ?? [];
+    for (const r of rows) out.push({ date: String((r as any).created_at).slice(0, 10), source: String((r as any).source ?? "") });
+    if (rows.length < size) break;
+    from += size;
+  }
+  return out;
+}
+
+async function countRows(table: string, lo: string, hi: string, mod?: (q: any) => any): Promise<number> {
+  if (!supabase) return 0;
+  let q: any = supabase.from(table).select("*", { count: "exact", head: true }).gte("created_at", lo).lte("created_at", hi);
+  if (mod) q = mod(q);
+  const { count, error } = await q;
+  return error ? 0 : count ?? 0;
+}
+
 function achievement(actual: number, target: number, lowerBetter: boolean): number {
   if (lowerBetter) return actual > 0 ? (target / actual) * 100 : 100;
   return target > 0 ? (actual / target) * 100 : 0;
@@ -197,10 +223,11 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
   const [sortKey, setSortKey] = useState<SortKey>("spend");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
-  const [subs, setSubs] = useState<{ date: string; source: string }[]>([]);
-  const [jobs, setJobs] = useState<string[]>([]);
-  const [prevSubs, setPrevSubs] = useState(0);
-  const [prevJobs, setPrevJobs] = useState(0);
+  const [subDates, setSubDates] = useState<string[]>([]);
+  const [jobRows, setJobRows] = useState<{ date: string; source: string }[]>([]);
+  const [prevSubPaid, setPrevSubPaid] = useState(0);
+  const [prevJobAll, setPrevJobAll] = useState(0);
+  const [prevJobFiltered, setPrevJobFiltered] = useState(0);
   const [dbStatus, setDbStatus] = useState<"loading" | "connecting" | "ready">("loading");
 
   const [notes, setNotes] = useState<Note[]>([]);
@@ -221,27 +248,28 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
     const hi = dayEndISO(end);
     const plo = dayStartISO(previousStart);
     const phi = dayEndISO(previousEnd);
-    Promise.all([
-      supabase.from("submissions").select("created_at, source").gte("created_at", lo).lte("created_at", hi),
-      supabase.from("job_applications").select("created_at").gte("created_at", lo).lte("created_at", hi),
-      supabase.from("submissions").select("*", { count: "exact", head: true }).in("source", PAID_SOURCES).gte("created_at", plo).lte("created_at", phi),
-      supabase.from("job_applications").select("*", { count: "exact", head: true }).gte("created_at", plo).lte("created_at", phi),
-    ]).then(([s, j, ps, pj]) => {
+    (async () => {
+      const [subRows, jRows, pSub, pJobAll, pJobFiltered] = await Promise.all([
+        fetchRows("submissions", lo, hi, true),
+        fetchRows("job_applications", lo, hi, false),
+        countRows("submissions", plo, phi, (q) => q.in("source", PAID_SOURCES)),
+        countRows("job_applications", plo, phi),
+        countRows("job_applications", plo, phi, (q) => q.or("source.eq.meta,source.is.null")),
+      ]);
       if (!active) return;
-      if (s.error || j.error) {
+      if (!subRows || !jRows) {
         setDbStatus("connecting");
         return;
       }
-      const subRows = (s.data ?? []).map((r: any) => ({ date: String(r.created_at).slice(0, 10), source: String(r.source ?? "") }));
-      const jobRows = (j.data ?? []).map((r: any) => String(r.created_at).slice(0, 10));
-      console.log(`[paid] submissions rows: ${subRows.length}`);
-      console.log(`[paid] job_applications rows: ${jobRows.length}`);
-      setSubs(subRows);
-      setJobs(jobRows);
-      setPrevSubs(ps.count ?? 0);
-      setPrevJobs(pj.count ?? 0);
+      console.log(`[paid] submissions (paid) rows: ${subRows.length}`);
+      console.log(`[paid] job_applications rows: ${jRows.length}`);
+      setSubDates(subRows.map((r) => r.date));
+      setJobRows(jRows);
+      setPrevSubPaid(pSub);
+      setPrevJobAll(pJobAll);
+      setPrevJobFiltered(pJobFiltered);
       setDbStatus("ready");
-    });
+    })();
     return () => {
       active = false;
     };
@@ -290,38 +318,62 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
 
   const allCreatives = useMemo(() => creativesWithSessions(days, ga4Days), [days, ga4Days]);
 
-  const paidSubDates = useMemo(() => subs.filter((r) => PAID_SOURCES.includes(r.source)).map((r) => r.date), [subs]);
-  const totalPaidSubmissions = paidSubDates.length;
-  const totalJobApps = jobs.length;
+  const paidSubmissions = subDates.length;
+  const jobAppsAll = jobRows.length;
+  const jobAppsFiltered = jobRows.filter((j) => j.source === "meta" || j.source === "").length;
 
-  const metaSessions = useMemo(() => ga4Days.filter((d) => d.channel === "paid").reduce((a, d) => a + d.sessions, 0), [ga4Days]);
-  const prevSessions = useMemo(() => prevGa4.filter((d) => d.channel === "paid").reduce((a, d) => a + d.sessions, 0), [prevGa4]);
+  const metaSess = (g: Ga4Day[], lp?: string) =>
+    g.filter((d) => d.source === "meta" && (lp === undefined || d.landingPage === lp)).reduce((a, d) => a + d.sessions, 0);
+  const salarySessions = metaSess(ga4Days, "/");
+  const jobSessions = metaSess(ga4Days, "/jobs");
+  const allMetaSessions = metaSess(ga4Days);
+  const prevSalarySessions = metaSess(prevGa4, "/");
+  const prevJobSessions = metaSess(prevGa4, "/jobs");
+  const prevAllMetaSessions = metaSess(prevGa4);
 
-  const camp = metaTotals(filterByCampaign(days, campaign));
-  const prevCamp = metaTotals(filterByCampaign(prevDays, campaign));
-  const salarySpend = metaTotals(filterByCampaign(days, "Salary Page")).spend;
-  const jobSpend = metaTotals(filterByCampaign(days, "Job Page")).spend;
+  const salaryT = metaTotals(filterByCampaign(days, "Salary Page"));
+  const jobT = metaTotals(filterByCampaign(days, "Job Page"));
+  const allT = metaTotals(days);
+  const prevSalaryT = metaTotals(filterByCampaign(prevDays, "Salary Page"));
+  const prevJobT = metaTotals(filterByCampaign(prevDays, "Job Page"));
+  const prevAllT = metaTotals(prevDays);
 
-  const costSub = totalPaidSubmissions ? Math.round(camp.spend / totalPaidSubmissions) : 0;
-  const prevCostSub = prevSubs ? Math.round(prevCamp.spend / prevSubs) : 0;
+  const cdiv = (a: number, b: number) => (b ? Math.round(a / b) : 0);
 
-  const cards = [
-    { label: "Spend ₩", value: camp.spend, kind: "vnd", prev: prevCamp.spend },
-    { label: "Sessions", value: metaSessions, kind: "count", prev: prevSessions },
-    { label: "Submissions", value: totalPaidSubmissions, kind: "count", prev: prevSubs },
-    { label: "Job apps", value: totalJobApps, kind: "count", prev: prevJobs },
-    { label: "Cost/sub", value: costSub, kind: "vnd", prev: prevCostSub },
-    { label: "CTR%", value: camp.ctr, kind: "pct", prev: prevCamp.ctr },
-  ];
+  const cards =
+    campaign === "Salary Page"
+      ? [
+          { label: "Spend ₩", value: salaryT.spend, kind: "krw", prev: prevSalaryT.spend },
+          { label: "Sessions", value: salarySessions, kind: "count", prev: prevSalarySessions },
+          { label: "Submissions", value: paidSubmissions, kind: "count", prev: prevSubPaid },
+          { label: "Cost/sub", value: cdiv(salaryT.spend, paidSubmissions), kind: "krw", prev: cdiv(prevSalaryT.spend, prevSubPaid) },
+          { label: "CTR%", value: salaryT.ctr, kind: "pct", prev: prevSalaryT.ctr },
+        ]
+      : campaign === "Job Page"
+      ? [
+          { label: "Spend ₩", value: jobT.spend, kind: "krw", prev: prevJobT.spend },
+          { label: "Sessions", value: jobSessions, kind: "count", prev: prevJobSessions },
+          { label: "Job Applications", value: jobAppsFiltered, kind: "count", prev: prevJobFiltered },
+          { label: "Cost/job app", value: cdiv(jobT.spend, jobAppsFiltered), kind: "krw", prev: cdiv(prevJobT.spend, prevJobFiltered) },
+          { label: "CTR%", value: jobT.ctr, kind: "pct", prev: prevJobT.ctr },
+        ]
+      : [
+          { label: "Spend ₩", value: allT.spend, kind: "krw", prev: prevAllT.spend },
+          { label: "Sessions", value: allMetaSessions, kind: "count", prev: prevAllMetaSessions },
+          { label: "Submissions", value: paidSubmissions, kind: "count", prev: prevSubPaid },
+          { label: "Job Apps", value: jobAppsAll, kind: "count", prev: prevJobAll },
+          { label: "Cost/sub", value: cdiv(salaryT.spend, paidSubmissions), kind: "krw", prev: cdiv(prevSalaryT.spend, prevSubPaid) },
+          { label: "CTR%", value: allT.ctr, kind: "pct", prev: prevAllT.ctr },
+        ];
 
-  const fmt = (v: number, kind: string) => (kind === "vnd" ? formatKRW(v) : kind === "pct" ? (v * 100).toFixed(2) : formatNumber(v));
+  const fmt = (v: number, kind: string) => (kind === "krw" ? formatKRW(v) : kind === "pct" ? (v * 100).toFixed(2) : formatNumber(v));
 
   const actuals: Record<string, number> = {
-    Submissions: totalPaidSubmissions,
-    "Job apps": totalJobApps,
-    "Cost/sub": totalPaidSubmissions ? Math.round(salarySpend / totalPaidSubmissions) : 0,
-    "Cost/job app": totalJobApps ? Math.round(jobSpend / totalJobApps) : 0,
-    Budget: metaTotals(days).spend,
+    Submissions: paidSubmissions,
+    "Job apps": jobAppsAll,
+    "Cost/sub": cdiv(salaryT.spend, paidSubmissions),
+    "Cost/job app": cdiv(jobT.spend, jobAppsAll),
+    Budget: allT.spend,
   };
 
   const dates = useMemo(() => eachDay(start, end), [start, end]);
@@ -329,12 +381,12 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
   const endMs = dayMs(end);
   const chartData = useMemo(() => {
     const sm = spendByDay(filterByCampaign(days, campaign));
-    const subM = countByDay(paidSubDates);
-    const jobM = countByDay(jobs);
+    const subM = countByDay(subDates);
+    const jobM = countByDay(jobRows.map((j) => j.date));
     return dates
       .map((d) => ({ ts: dayMs(d), date: d, spend: sm.get(d) ?? 0, submissions: subM.get(d) ?? 0, jobApps: jobM.get(d) ?? 0 }))
       .filter((p) => p.ts >= startMs && p.ts <= endMs);
-  }, [dates, days, campaign, paidSubDates, jobs, startMs, endMs]);
+  }, [dates, days, campaign, subDates, jobRows, startMs, endMs]);
 
   const rangeNotes = notes.filter((n) => n.date >= start && n.date <= end);
 
