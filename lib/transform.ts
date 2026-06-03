@@ -24,8 +24,6 @@ const META_COLS = {
   audience: 22,
 };
 
-const META_CAMPAIGN_INCLUDES = "FYI";
-
 const SNS_COLS = {
   facebook: { date: 0, pillar: 1, reach: 2, impressions: 3, engagement: 4 },
   instagram: { date: 0, pillar: 1, reach: 2, impressions: 3, engagement: 4 },
@@ -65,31 +63,27 @@ export function isJobProduct(product: string): boolean {
 }
 
 export function parseMetaAds(rows: string[][]): MetaRow[] {
-  return rows
-    .filter((r) =>
-      String(r[META_COLS.campaign] ?? "")
-        .toUpperCase()
-        .includes(META_CAMPAIGN_INCLUDES)
-    )
-    .filter((r) =>
-      ALLOWED_META_PRODUCTS.includes(r[META_COLS.product] as MetaProduct)
-    )
-    .map((r) => {
-      const date = isoDate(r[META_COLS.date]);
-      const product = r[META_COLS.product] as MetaProduct;
-      return {
-        date,
-        isoWeek: getISOWeek(date),
-        product,
-        campaignType: campaignTypeOf(product),
-        adName: r[META_COLS.ad_name] ?? "",
-        audience: r[META_COLS.audience] ?? "",
-        spend: num(r[META_COLS.spend]),
-        leads: num(r[META_COLS.leads]),
-        clicks: num(r[META_COLS.clicks]),
-        impressions: num(r[META_COLS.impressions]),
-      };
-    });
+  console.log("[parseMetaAds] sample row[0]:", rows[0]);
+  console.log("[parseMetaAds] col[9] sample:", rows[0]?.[META_COLS.spend]);
+  const matched = rows.filter((r) => ALLOWED_META_PRODUCTS.includes(r[META_COLS.product] as MetaProduct));
+  const totalSpend = matched.reduce((s, r) => s + num(r[META_COLS.spend]), 0);
+  console.log(`[parseMetaAds] matched ${matched.length} rows, total spend (col9) = ${totalSpend}`);
+  return matched.map((r) => {
+    const date = isoDate(r[META_COLS.date]);
+    const product = r[META_COLS.product] as MetaProduct;
+    return {
+      date,
+      isoWeek: getISOWeek(date),
+      product,
+      campaignType: campaignTypeOf(product),
+      adName: r[META_COLS.ad_name] ?? "",
+      audience: r[META_COLS.audience] ?? "",
+      spend: num(r[META_COLS.spend]),
+      leads: num(r[META_COLS.leads]),
+      clicks: num(r[META_COLS.clicks]),
+      impressions: num(r[META_COLS.impressions]),
+    };
+  });
 }
 
 export function aggregateMetaWeekly(rows: MetaRow[]): WeeklyMeta[] {
