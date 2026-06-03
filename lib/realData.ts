@@ -9,6 +9,14 @@ async function safe(tab: string): Promise<string[][]> {
   }
 }
 
+async function safeRaw(tab: string): Promise<string[][]> {
+  try {
+    return await getSheetData(tab, true);
+  } catch {
+    return [];
+  }
+}
+
 export interface MetaDay {
   date: string;
   week: string;
@@ -21,30 +29,45 @@ export interface MetaDay {
   impressions: number;
 }
 
+const META_PRODUCTS = ["April", "Job-page", "K-Tuvi"];
+
 export async function getMetaDays(): Promise<MetaDay[]> {
-  const rows = await safe("meta_ad_raw_data");
-  console.log("[meta-spend] sample row[0] (index:value):", (rows[0] ?? []).map((v, i) => `${i}:${v}`));
+  const rows = await safeRaw("meta_ad_raw_data");
+  if (rows.length === 0) return [];
+  const headers = rows[0];
+  const idx = (name: string) => headers.indexOf(name);
+  const dayIdx = idx("Day");
+  const spendIdx = idx("Amount Spent");
+  const productIdx = idx("Product");
+  const leadsIdx = idx("Website Lead");
+  const clicksIdx = idx("Link Clicks");
+  const impressionsIdx = idx("Impressions");
+  const adNameIdx = idx("Ad Name");
+  const audienceIdx = idx("Audience");
+  console.log("[meta-spend] headers:", headers);
+  console.log(`[meta-spend] idx Day=${dayIdx} Spend=${spendIdx} Product=${productIdx} Leads=${leadsIdx} Clicks=${clicksIdx} Impr=${impressionsIdx}`);
+
   const result = rows
-    .filter((r) => String(r[0] ?? "").toUpperCase().includes("FYI"))
+    .slice(1)
+    .filter((r) => productIdx < 0 || META_PRODUCTS.includes(r[productIdx]))
     .map((r) => {
-      const date = dayOf(r[3]);
+      const date = dayOf(r[dayIdx]);
       return {
         date,
         week: weekLabel(date),
-        product: r[18] ?? "",
-        adName: r[2] ?? "",
-        audience: r[22] ?? "",
-        spend: parseMetaNum(r[9]),
-        leads: parseMetaNum(r[14]),
-        clicks: parseMetaNum(r[11]),
-        impressions: parseMetaNum(r[5]),
+        product: r[productIdx] ?? "",
+        adName: r[adNameIdx] ?? "",
+        audience: r[audienceIdx] ?? "",
+        spend: parseMetaNum(r[spendIdx]),
+        leads: parseMetaNum(r[leadsIdx]),
+        clicks: parseMetaNum(r[clicksIdx]),
+        impressions: parseMetaNum(r[impressionsIdx]),
       };
     })
     .filter((d) => d.date);
   const lastDate = result.reduce((m, d) => (d.date > m ? d.date : m), "");
   const totalSpend = result.reduce((s, d) => s + d.spend, 0);
-  console.log(`[sheets] meta_ad_raw_data: ${result.length} rows, last date ${lastDate || "n/a"}`);
-  console.log(`[meta-spend] matched ${result.length} rows, total spend (col9) = ${totalSpend}`);
+  console.log(`[meta-spend] matched ${result.length} rows, last date ${lastDate || "n/a"}, total spend = ${totalSpend}`);
   return result;
 }
 

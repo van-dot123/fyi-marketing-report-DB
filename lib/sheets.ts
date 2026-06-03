@@ -18,9 +18,10 @@ interface SheetValuesResponse {
  * Fetch all rows from a single tab of the configured spreadsheet.
  *
  * @param tabName - The sheet tab (e.g. "fb_post_metrics").
- * @returns A 2D array of cell strings with the header row removed.
+ * @param includeHeader - When true, keeps the header row as rows[0].
+ * @returns A 2D array of cell strings (header dropped unless includeHeader).
  */
-export async function getSheetData(tabName: string): Promise<string[][]> {
+export async function getSheetData(tabName: string, includeHeader = false): Promise<string[][]> {
   if (!SHEET_ID) {
     throw new Error("Missing GOOGLE_SHEET_ID environment variable");
   }
@@ -46,6 +47,5 @@ export async function getSheetData(tabName: string): Promise<string[][]> {
   const data = (await res.json()) as SheetValuesResponse;
   const rows = data.values ?? [];
 
-  // Drop the header row.
-  return rows.slice(1);
+  return includeHeader ? rows : rows.slice(1);
 }

@@ -12,18 +12,6 @@ import {
   campaignTypeOf,
 } from "@/types";
 
-const META_COLS = {
-  campaign: 0,
-  date: 3,
-  product: 18,
-  ad_name: 2,
-  impressions: 5,
-  spend: 9,
-  clicks: 11,
-  leads: 14,
-  audience: 22,
-};
-
 const SNS_COLS = {
   facebook: { date: 0, pillar: 1, reach: 2, impressions: 3, engagement: 4 },
   instagram: { date: 0, pillar: 1, reach: 2, impressions: 3, engagement: 4 },
@@ -63,25 +51,39 @@ export function isJobProduct(product: string): boolean {
 }
 
 export function parseMetaAds(rows: string[][]): MetaRow[] {
-  console.log("[parseMetaAds] sample row[0]:", rows[0]);
-  console.log("[parseMetaAds] col[9] sample:", rows[0]?.[META_COLS.spend]);
-  const matched = rows.filter((r) => ALLOWED_META_PRODUCTS.includes(r[META_COLS.product] as MetaProduct));
-  const totalSpend = matched.reduce((s, r) => s + num(r[META_COLS.spend]), 0);
-  console.log(`[parseMetaAds] matched ${matched.length} rows, total spend (col9) = ${totalSpend}`);
-  return matched.map((r) => {
-    const date = isoDate(r[META_COLS.date]);
-    const product = r[META_COLS.product] as MetaProduct;
+  const headers = rows[0] ?? [];
+  const idx = (name: string) => headers.indexOf(name);
+  const dayIdx = idx("Day");
+  const spendIdx = idx("Amount Spent");
+  const productIdx = idx("Product");
+  const leadsIdx = idx("Website Lead");
+  const clicksIdx = idx("Link Clicks");
+  const impressionsIdx = idx("Impressions");
+  const ctrIdx = idx("CTR (Link Click-Through Rate)");
+  const adNameIdx = idx("Ad Name");
+  const campaignIdx = idx("Campaign Name");
+  const audienceIdx = idx("Audience");
+  const objectiveIdx = idx("MT_Objective");
+
+  const dataRows = rows.slice(1).filter((r) => ALLOWED_META_PRODUCTS.includes(r[productIdx] as MetaProduct));
+  console.log("[parseMetaAds] headers:", headers);
+  console.log(`[parseMetaAds] idx Day=${dayIdx} Spend=${spendIdx} Product=${productIdx} Leads=${leadsIdx} Clicks=${clicksIdx} Impr=${impressionsIdx} CTR=${ctrIdx} Campaign=${campaignIdx} Audience=${audienceIdx} Objective=${objectiveIdx}`);
+  console.log(`[parseMetaAds] matched ${dataRows.length} rows, total spend = ${dataRows.reduce((s, r) => s + num(r[spendIdx]), 0)}`);
+
+  return dataRows.map((r) => {
+    const date = isoDate(r[dayIdx]);
+    const product = r[productIdx] as MetaProduct;
     return {
       date,
       isoWeek: getISOWeek(date),
       product,
       campaignType: campaignTypeOf(product),
-      adName: r[META_COLS.ad_name] ?? "",
-      audience: r[META_COLS.audience] ?? "",
-      spend: num(r[META_COLS.spend]),
-      leads: num(r[META_COLS.leads]),
-      clicks: num(r[META_COLS.clicks]),
-      impressions: num(r[META_COLS.impressions]),
+      adName: r[adNameIdx] ?? "",
+      audience: r[audienceIdx] ?? "",
+      spend: num(r[spendIdx]),
+      leads: num(r[leadsIdx]),
+      clicks: num(r[clicksIdx]),
+      impressions: num(r[impressionsIdx]),
     };
   });
 }
