@@ -66,9 +66,6 @@ export function parseMetaAds(rows: string[][]): MetaRow[] {
   const objectiveIdx = idx("MT_Objective");
 
   const dataRows = rows.slice(1).filter((r) => ALLOWED_META_PRODUCTS.includes(r[productIdx] as MetaProduct));
-  console.log("[parseMetaAds] headers:", headers);
-  console.log(`[parseMetaAds] idx Day=${dayIdx} Spend=${spendIdx} Product=${productIdx} Leads=${leadsIdx} Clicks=${clicksIdx} Impr=${impressionsIdx} CTR=${ctrIdx} Campaign=${campaignIdx} Audience=${audienceIdx} Objective=${objectiveIdx}`);
-  console.log(`[parseMetaAds] matched ${dataRows.length} rows, total spend = ${dataRows.reduce((s, r) => s + num(r[spendIdx]), 0)}`);
 
   return dataRows.map((r) => {
     const date = isoDate(r[dayIdx]);

@@ -44,8 +44,6 @@ export async function getMetaDays(): Promise<MetaDay[]> {
   const impressionsIdx = idx("Impressions");
   const adNameIdx = idx("Ad Name");
   const audienceIdx = idx("Audience");
-  console.log("[meta-spend] headers:", headers);
-  console.log(`[meta-spend] idx Day=${dayIdx} Spend=${spendIdx} Product=${productIdx} Leads=${leadsIdx} Clicks=${clicksIdx} Impr=${impressionsIdx}`);
 
   const result = rows
     .slice(1)
@@ -66,8 +64,7 @@ export async function getMetaDays(): Promise<MetaDay[]> {
     })
     .filter((d) => d.date);
   const lastDate = result.reduce((m, d) => (d.date > m ? d.date : m), "");
-  const totalSpend = result.reduce((s, d) => s + d.spend, 0);
-  console.log(`[meta-spend] matched ${result.length} rows, last date ${lastDate || "n/a"}, total spend = ${totalSpend}`);
+  console.log(`[sheets] meta_ad_raw_data: ${result.length} rows, last date ${lastDate || "n/a"}`);
   return result;
 }
 
