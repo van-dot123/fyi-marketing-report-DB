@@ -56,6 +56,8 @@ export interface GA4Row {
   date: string;
   isoWeek: number;
   source: string;
+  campaign: string;
+  landingPage: string;
   sessions: number;
   conversions: number;
 }

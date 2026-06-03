@@ -76,6 +76,7 @@ export interface Ga4Day {
   channel: Ga4Channel;
   source: string;
   campaign: string;
+  landingPage: string;
   sessions: number;
   conversions: number;
 }
@@ -83,11 +84,23 @@ export interface Ga4Day {
 const ORGANIC_SOURCES = new Set(["facebook", "instagram", "threads"]);
 
 export async function getGa4Days(): Promise<Ga4Day[]> {
-  const rows = await safe("GA4_raw_data");
+  const rows = await safeRaw("GA4_raw_data");
+  if (rows.length === 0) return [];
+  const headers = rows[0];
+  const idx = (name: string) => headers.indexOf(name);
+  const dateIdx = idx("Date");
+  const cleanedSourceIdx = idx("Cleaned Source");
+  const campaignIdx = idx("Campaign");
+  const landingPageIdx = idx("Landing Page");
+  const sessionsIdx = idx("Sessions");
+  const conversionsIdx = idx("Conversions");
+  const numCell = (s: string) => parseInt(String(s ?? "").replace(/,/g, "."), 10) || 0;
+
   const result = rows
+    .slice(1)
     .map((r) => {
-      const date = dayOf(r[0]);
-      const src = String(r[2] ?? "").toLowerCase();
+      const date = dayOf(r[dateIdx]);
+      const src = String(r[cleanedSourceIdx] ?? "").toLowerCase();
       const channel: Ga4Channel =
         src === "meta" ? "paid" : ORGANIC_SOURCES.has(src) ? "organic" : "other";
       return {
@@ -95,9 +108,10 @@ export async function getGa4Days(): Promise<Ga4Day[]> {
         week: weekLabel(date),
         channel,
         source: src,
-        campaign: String(r[3] ?? ""),
-        sessions: intNum(r[4]),
-        conversions: intNum(r[10]),
+        campaign: String(r[campaignIdx] ?? ""),
+        landingPage: String(r[landingPageIdx] ?? ""),
+        sessions: numCell(r[sessionsIdx]),
+        conversions: numCell(r[conversionsIdx]),
       };
     })
     .filter((d) => d.date);

@@ -18,8 +18,6 @@ const SNS_COLS = {
   threads: { date: 0, pillar: 1, views: 2, impressions: 3, engagement: 4 },
 };
 
-const GA4_COLS = { date: 0, source: 2, sessions: 4, conversions: 10 };
-
 export const PILLAR_MAP: Record<string, string> = {};
 
 function num(s: string): number {
@@ -159,14 +157,26 @@ export function parseSNS(
 }
 
 export function parseGA4(rows: string[][]): GA4Row[] {
-  return rows.map((r) => {
-    const date = isoDate(r[GA4_COLS.date]);
+  const headers = rows[0] ?? [];
+  const idx = (name: string) => headers.indexOf(name);
+  const dateIdx = idx("Date");
+  const cleanedSourceIdx = idx("Cleaned Source");
+  const campaignIdx = idx("Campaign");
+  const landingPageIdx = idx("Landing Page");
+  const sessionsIdx = idx("Sessions");
+  const conversionsIdx = idx("Conversions");
+  const numCell = (s: string) => parseInt(String(s ?? "").replace(/,/g, "."), 10) || 0;
+
+  return rows.slice(1).map((r) => {
+    const date = isoDate(r[dateIdx]);
     return {
       date,
       isoWeek: getISOWeek(date),
-      source: r[GA4_COLS.source] ?? "",
-      sessions: num(r[GA4_COLS.sessions]),
-      conversions: num(r[GA4_COLS.conversions]),
+      source: r[cleanedSourceIdx] ?? "",
+      campaign: r[campaignIdx] ?? "",
+      landingPage: r[landingPageIdx] ?? "",
+      sessions: numCell(r[sessionsIdx]),
+      conversions: numCell(r[conversionsIdx]),
     };
   });
 }
