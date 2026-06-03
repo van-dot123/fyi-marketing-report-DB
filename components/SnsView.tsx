@@ -107,6 +107,7 @@ export default function SnsView({ posts, followers, ga4 }: { posts: SnsPostRow[]
     supabase
       .from("optimization_log")
       .select("date, campaign, note")
+      .eq("page", "sns")
       .order("date", { ascending: false })
       .then(({ data, error }) => {
         if (error) {
@@ -131,7 +132,7 @@ export default function SnsView({ posts, followers, ga4 }: { posts: SnsPostRow[]
       setNoteError("Enter a date and note.");
       return;
     }
-    const { error } = await supabase.from("optimization_log").insert({ date: noteDate, campaign: tab, note: noteText.trim() });
+    const { error } = await supabase.from("optimization_log").insert({ date: noteDate, page: "sns", campaign: tab, note: noteText.trim() });
     if (error) {
       setNoteError(error.message);
       return;

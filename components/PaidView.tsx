@@ -288,6 +288,7 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
     supabase
       .from("optimization_log")
       .select("date, campaign, note")
+      .eq("page", "paid")
       .order("date", { ascending: false })
       .then(({ data, error }) => {
         if (error) {
@@ -456,7 +457,7 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
       setNoteError("Nhập ngày và nội dung note.");
       return;
     }
-    const { error } = await supabase.from("optimization_log").insert({ date: noteDate, campaign, note: noteText.trim() });
+    const { error } = await supabase.from("optimization_log").insert({ date: noteDate, page: "paid", campaign, note: noteText.trim() });
     if (error) {
       setNoteError(error.message);
       return;
