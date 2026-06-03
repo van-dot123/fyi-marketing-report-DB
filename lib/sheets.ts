@@ -8,9 +8,6 @@
 const SHEET_ID = process.env.GOOGLE_SHEET_ID;
 const API_KEY = process.env.GOOGLE_SHEETS_API_KEY;
 
-/** Cache sheet responses for 1 hour. */
-const REVALIDATE_SECONDS = 60 * 60;
-
 interface SheetValuesResponse {
   range?: string;
   majorDimension?: string;
@@ -36,7 +33,7 @@ export async function getSheetData(tabName: string): Promise<string[][]> {
   )}?key=${API_KEY}`;
 
   const res = await fetch(url, {
-    next: { revalidate: REVALIDATE_SECONDS },
+    cache: "no-store",
   });
 
   if (!res.ok) {

@@ -23,7 +23,7 @@ export interface MetaDay {
 
 export async function getMetaDays(): Promise<MetaDay[]> {
   const rows = await safe("meta_ad_raw_data");
-  return rows
+  const result = rows
     .filter((r) => String(r[0] ?? "").toUpperCase().includes("FYI"))
     .map((r) => {
       const date = dayOf(r[3]);
@@ -40,6 +40,9 @@ export async function getMetaDays(): Promise<MetaDay[]> {
       };
     })
     .filter((d) => d.date);
+  const lastDate = result.reduce((m, d) => (d.date > m ? d.date : m), "");
+  console.log(`[sheets] meta_ad_raw_data: ${result.length} rows, last date ${lastDate || "n/a"}`);
+  return result;
 }
 
 export type Ga4Channel = "paid" | "organic" | "other";
@@ -58,7 +61,7 @@ const ORGANIC_SOURCES = new Set(["facebook", "instagram", "threads"]);
 
 export async function getGa4Days(): Promise<Ga4Day[]> {
   const rows = await safe("GA4_raw_data");
-  return rows
+  const result = rows
     .map((r) => {
       const date = dayOf(r[0]);
       const src = String(r[2] ?? "").toLowerCase();
@@ -75,6 +78,9 @@ export async function getGa4Days(): Promise<Ga4Day[]> {
       };
     })
     .filter((d) => d.date);
+  const lastDate = result.reduce((m, d) => (d.date > m ? d.date : m), "");
+  console.log(`[sheets] GA4_raw_data: ${result.length} rows, last date ${lastDate || "n/a"}`);
+  return result;
 }
 
 export type SnsPlatform = "Facebook" | "Instagram" | "Threads";
