@@ -16,7 +16,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { AlertTriangle, Plus } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import { useDateRange } from "@/components/DateRangePicker";
 import { supabase } from "@/lib/supabase";
 import { Ga4Day, MetaDay, SnsPostRow } from "@/lib/realData";
@@ -25,6 +25,7 @@ import { formatKRW, formatNumber, formatPercent, formatPeriod } from "@/lib/form
 
 const TARGETS_KEY = "fyi-monthly-targets";
 const LOG_TYPES = ["Paid", "SNS", "Product"] as const;
+const LOG_TABS = ["All", ...LOG_TYPES];
 const TYPE_COLOR: Record<string, string> = { Paid: "#BA7517", SNS: "#1D9E75", Product: "#534AB7" };
 
 const TARGET_KPIS: { key: string; kind: "count" | "krw"; lowerBetter: boolean }[] = [
@@ -278,11 +279,8 @@ export default function Overview({ meta, ga4, sns, missingKey }: { meta: MetaDay
   const [prevSubs, setPrevSubs] = useState(0);
   const [prevJobs, setPrevJobs] = useState(0);
   const [notes, setNotes] = useState<Note[]>([]);
-
-  const [noteType, setNoteType] = useState<(typeof LOG_TYPES)[number]>("Paid");
-  const [noteText, setNoteText] = useState("");
-  const [noteDate, setNoteDate] = useState(start);
-  const [noteError, setNoteError] = useState<string | null>(null);
+  const [logTab, setLogTab] = useState<string>("All");
+  const [showAllLogs, setShowAllLogs] = useState(false);
 
   useEffect(() => {
     if (!supabase) return;
@@ -337,25 +335,6 @@ export default function Overview({ meta, ga4, sns, missingKey }: { meta: MetaDay
     loadNotes();
   }, [loadNotes]);
 
-  const addNote = async () => {
-    setNoteError(null);
-    if (!supabase) {
-      setNoteError("Supabase not connected.");
-      return;
-    }
-    if (!noteDate || !noteText.trim()) {
-      setNoteError("Enter a date and note.");
-      return;
-    }
-    const { error } = await supabase.from("optimization_log").insert({ date: noteDate, campaign: noteType, note: noteText.trim() });
-    if (error) {
-      setNoteError(error.message);
-      return;
-    }
-    setNoteText("");
-    loadNotes();
-  };
-
   const t = metaTotals(days);
   const prevT = metaTotals(prevDays);
   const salarySpend = metaTotals(filterByCampaign(days, "Salary Page")).spend;
@@ -399,7 +378,8 @@ export default function Overview({ meta, ga4, sns, missingKey }: { meta: MetaDay
   }, [dates, days, subs, jobs, signups, startMs, endMs]);
 
   const rangeNotes = notes.filter((n) => n.date >= start && n.date <= end);
-  const recentNotes = rangeNotes.slice(0, 5);
+  const sortedLogs = [...(logTab === "All" ? rangeNotes : rangeNotes.filter((n) => n.type === logTab))].sort((a, b) => b.date.localeCompare(a.date));
+  const visibleLogs = showAllLogs ? sortedLogs : sortedLogs.slice(0, 5);
 
   const actuals: Record<string, number> = {
     Submissions: submissions,
@@ -566,52 +546,44 @@ export default function Overview({ meta, ga4, sns, missingKey }: { meta: MetaDay
             </div>
           </Card>
 
-          <Card label="Optimization log" link={{ href: "/paid", text: "View all" }}>
+          <Card label="Optimization log">
+            <div className="mb-2.5 inline-flex gap-1 rounded-lg bg-slate-100 p-1">
+              {LOG_TABS.map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => {
+                    setLogTab(tab);
+                    setShowAllLogs(false);
+                  }}
+                  className={[
+                    "rounded-md px-2.5 py-1 text-[11px] font-normal transition-colors",
+                    logTab === tab ? "border-slate-200 bg-white text-slate-900" : "border-transparent text-slate-500",
+                  ].join(" ")}
+                  style={{ borderWidth: 0.5, borderStyle: "solid" }}
+                >
+                  {tab}
+                </button>
+              ))}
+            </div>
             <div className="space-y-2">
-              {recentNotes.length === 0 && <p className="text-xs text-slate-400">No notes in range.</p>}
-              {recentNotes.map((n, i) => (
+              {visibleLogs.length === 0 && <p className="text-xs text-slate-400">No notes in range.</p>}
+              {visibleLogs.map((n, i) => (
                 <div key={`${n.date}-${i}`} className="rounded-r-md bg-slate-50 px-3 py-1.5" style={{ borderLeftWidth: 2, borderLeftStyle: "solid", borderLeftColor: TYPE_COLOR[n.type] ?? "#94a3b8" }}>
-                  <p className="text-[10px] text-slate-400">
-                    {fmtTick(dayMs(n.date))} · {n.type || "—"}
-                  </p>
-                  <p className="text-xs text-slate-700">{n.note}</p>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-slate-400">{fmtTick(dayMs(n.date))}</span>
+                    <span className="rounded-full px-1.5 py-0.5 text-[9px] font-medium text-white" style={{ backgroundColor: TYPE_COLOR[n.type] ?? "#94a3b8" }}>
+                      {n.type || "—"}
+                    </span>
+                  </div>
+                  <p className="mt-0.5 text-xs text-slate-700">{n.note}</p>
                 </div>
               ))}
             </div>
-            <div className="mt-3 flex flex-wrap items-end gap-2">
-              <select
-                value={noteType}
-                onChange={(e) => setNoteType(e.target.value as (typeof LOG_TYPES)[number])}
-                className="rounded-md px-2 py-1.5 text-xs text-slate-700 outline-none focus:border-purple-500"
-                style={{ border: "0.5px solid #e2e8f0" }}
-              >
-                {LOG_TYPES.map((tp) => (
-                  <option key={tp} value={tp}>
-                    {tp}
-                  </option>
-                ))}
-              </select>
-              <input
-                type="text"
-                value={noteText}
-                onChange={(e) => setNoteText(e.target.value)}
-                placeholder="Add an optimization note"
-                className="min-w-[140px] flex-1 rounded-md px-3 py-1.5 text-xs text-slate-700 outline-none focus:border-purple-500"
-                style={{ border: "0.5px solid #e2e8f0" }}
-              />
-              <input
-                type="date"
-                value={noteDate}
-                onChange={(e) => setNoteDate(e.target.value)}
-                className="rounded-md px-2 py-1.5 text-xs text-slate-700 outline-none focus:border-purple-500"
-                style={{ border: "0.5px solid #e2e8f0" }}
-              />
-              <button onClick={addNote} className="inline-flex items-center gap-1 rounded-md bg-purple-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-purple-700">
-                <Plus className="h-3.5 w-3.5" />
-                Add
+            {sortedLogs.length > 5 && (
+              <button onClick={() => setShowAllLogs(!showAllLogs)} className="mt-2.5 text-[11px] font-medium text-purple-600 hover:text-purple-700">
+                {showAllLogs ? "Show less" : "See more"}
               </button>
-            </div>
-            {noteError && <p className="mt-2 text-[11px] text-red-500">{noteError}</p>}
+            )}
           </Card>
         </div>
 
