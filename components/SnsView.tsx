@@ -34,6 +34,13 @@ import { Unit, formatNumber, formatPercent, formatValue } from "@/lib/format";
 const PLATFORM_SOURCE: Record<string, string> = { Facebook: "facebook", Instagram: "instagram", Threads: "threads" };
 const ORGANIC = new Set(["facebook", "instagram", "threads"]);
 
+const PLATFORM_ABBR: Record<string, string> = { Facebook: "fb", Instagram: "ins", Threads: "thre" };
+
+interface PostDot {
+  pillar: string;
+  platform: SnsPlatform;
+}
+
 const PILLAR_COLORS: Record<string, string> = {
   "Data-report": "#378ADD",
   "Job-post": "#534AB7",
@@ -54,10 +61,10 @@ function PillarTooltip({ active, label, dayInfo }: any) {
       <p className="font-medium text-slate-700">{fmtTick(label)}</p>
       <p className="text-slate-500">Sessions: {formatNumber(info.sessions)}</p>
       {info.posts.length > 0 && <p className="mt-1 text-slate-400">{info.posts.length} post(s)</p>}
-      {info.posts.map((pl: string, i: number) => (
+      {info.posts.map((post: PostDot, i: number) => (
         <div key={i} className="flex items-center gap-1.5">
-          <span style={{ width: 8, height: 8, borderRadius: 9999, backgroundColor: PILLAR_COLORS[pl] ?? "#cbd5e1" }} />
-          <span className="text-slate-600">{pl}</span>
+          <span style={{ width: 8, height: 8, borderRadius: 9999, backgroundColor: PILLAR_COLORS[post.pillar] ?? "#cbd5e1" }} />
+          <span className="text-slate-600">{post.pillar} · {PLATFORM_ABBR[post.platform] ?? post.platform}</span>
         </div>
       ))}
     </div>
@@ -70,22 +77,22 @@ const DOT_STEP = 10; // vertical center-to-center spacing (px)
 const DOT_BASE = 6; // gap between bar top and first dot center (px)
 const MAX_DOTS = 5; // dots shown before collapsing into a "+N" label
 
-function barTopDots(days: { pillars: string[] }[]) {
+function barTopDots(days: { posts: PostDot[] }[]) {
   function BarTopLabel(props: any) {
     const { x, y, width, value, index } = props;
     if (x == null || y == null) return <g />;
-    const pillars = days[index]?.pillars ?? [];
+    const posts = days[index]?.posts ?? [];
     const cx = x + width / 2;
-    const shown = pillars.slice(0, MAX_DOTS);
-    const extra = pillars.length - shown.length;
+    const shown = posts.slice(0, MAX_DOTS);
+    const extra = posts.length - shown.length;
     // Highest occupied y above the bar — count label sits above it.
     let topY = y;
     if (shown.length) topY = y - (shown.length - 1) * DOT_STEP - DOT_BASE;
     if (extra > 0) topY = y - MAX_DOTS * DOT_STEP - DOT_BASE;
     return (
       <g>
-        {shown.map((pl: string, i: number) => (
-          <circle key={i} cx={cx} cy={y - i * DOT_STEP - DOT_BASE} r={DOT_R} fill={PILLAR_COLORS[pl] ?? "#cbd5e1"} />
+        {shown.map((post: PostDot, i: number) => (
+          <circle key={i} cx={cx} cy={y - i * DOT_STEP - DOT_BASE} r={DOT_R} fill={PILLAR_COLORS[post.pillar] ?? "#cbd5e1"} />
         ))}
         {extra > 0 && (
           <text x={cx} y={y - MAX_DOTS * DOT_STEP - DOT_BASE} textAnchor="middle" dominantBaseline="middle" fontSize={8} fontWeight={600} fill="#64748b">
@@ -337,26 +344,28 @@ export default function SnsView({ posts, followers, ga4 }: { posts: SnsPostRow[]
   );
 
   const pillarActivity = useMemo(() => {
+    // Sessions bar is always total organic SNS sessions, independent of the active tab.
     const sessByDay = new Map<string, number>();
     for (const d of ga4Days) if (ORGANIC.has(d.source)) sessByDay.set(d.date, (sessByDay.get(d.date) ?? 0) + d.sessions);
-    const postsByDay = new Map<string, string[]>();
-    for (const p of ranged) {
+    // Dots follow the active platform tab (tabPosts is already filtered by tab).
+    const postsByDay = new Map<string, PostDot[]>();
+    for (const p of tabPosts) {
       const arr = postsByDay.get(p.date) ?? [];
-      arr.push(p.pillar);
+      arr.push({ pillar: p.pillar, platform: p.platform });
       postsByDay.set(p.date, arr);
     }
-    const bar: { ts: number; sessions: number; pillars: string[] }[] = [];
-    const dayInfo = new Map<number, { sessions: number; posts: string[] }>();
+    const bar: { ts: number; sessions: number; posts: PostDot[] }[] = [];
+    const dayInfo = new Map<number, { sessions: number; posts: PostDot[] }>();
     for (const d of dates) {
       const ts = dayMs(d);
       if (ts < startMs || ts > endMs) continue;
       const sessions = sessByDay.get(d) ?? 0;
-      const pls = postsByDay.get(d) ?? [];
-      bar.push({ ts, sessions, pillars: pls });
-      dayInfo.set(ts, { sessions, posts: pls });
+      const posts = postsByDay.get(d) ?? [];
+      bar.push({ ts, sessions, posts });
+      dayInfo.set(ts, { sessions, posts });
     }
     return { bar, dayInfo };
-  }, [ga4Days, ranged, dates, startMs, endMs]);
+  }, [ga4Days, tabPosts, dates, startMs, endMs]);
 
   const campaignDonut = useMemo(() => {
     const m = new Map<string, number>();
