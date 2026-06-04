@@ -319,7 +319,7 @@ export function snsWeekly(posts: SnsPostRow[], tab: PlatformTab): SnsWeek[] {
   });
 }
 
-const THREADS_REACH_NOTE = "Estimated reach (Views ÷ 2, frequency assumed = 2)";
+const THREADS_REACH_NOTE = "Threads reach is estimated (Views ÷ 2, assuming frequency = 2)";
 
 export function snsMetrics(posts: SnsPostRow[], tab: PlatformTab): Metric[] {
   const subset = platformPosts(posts, tab);
@@ -333,7 +333,7 @@ export function snsMetrics(posts: SnsPostRow[], tab: PlatformTab): Metric[] {
   return [
     { key: "views", label: "Views", value: views, unit: "number", series: weeks.map((w) => w.views) },
     { key: "interactions", label: "Interactions", value: interactions, unit: "number", series: weeks.map((w) => w.interactions) },
-    { key: "reach", label: "Reach", value: Math.round(reach), unit: "number", series: weeks.map((w) => w.reach), note: tab === "Threads" ? THREADS_REACH_NOTE : undefined },
+    { key: "reach", label: "Reach", value: Math.round(reach), unit: "number", series: weeks.map((w) => w.reach), note: tab === "All" || tab === "Threads" ? THREADS_REACH_NOTE : undefined },
     { key: "er", label: "ER%", value: er, unit: "percent", series: weeks.map((w) => (w.reach ? w.interactions / w.reach : 0)) },
   ];
 }

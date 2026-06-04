@@ -437,17 +437,23 @@ export default function SnsView({ posts, followers, ga4 }: { posts: SnsPostRow[]
         <Section label="Content overview">
           <div className="grid grid-cols-3 gap-3">
             {cards.map((c) => (
-              <div key={c.label} className="rounded-md bg-slate-50" style={{ padding: "9px 11px" }}>
-                <p className="text-[11px] text-slate-400">
-                  {c.label}
-                  {c.note && (
-                    <span title={c.note} className="ml-1 cursor-help text-slate-300" aria-label={c.note}>
-                      ⓘ
-                    </span>
-                  )}
-                </p>
+              <div
+                key={c.label}
+                className={["relative rounded-md bg-slate-50", c.note ? "group cursor-help" : ""].join(" ")}
+                style={{ padding: "9px 11px" }}
+              >
+                <p className="text-[11px] text-slate-400">{c.label}</p>
                 <p className="mt-0.5 text-[18px] font-medium leading-tight text-slate-900">{c.value === null ? "—" : formatValue(c.value, c.unit)}</p>
                 <Wow value={c.value} previous={c.prev} />
+                {c.note && (
+                  <div
+                    role="tooltip"
+                    className="pointer-events-none absolute left-0 top-full z-20 mt-1 hidden text-slate-600 group-hover:block"
+                    style={{ background: "#ffffff", border: "0.5px solid #e2e8f0", borderRadius: 6, padding: "8px 10px", fontSize: 11, maxWidth: 200 }}
+                  >
+                    {c.note}
+                  </div>
+                )}
               </div>
             ))}
           </div>
