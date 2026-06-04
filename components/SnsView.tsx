@@ -407,9 +407,8 @@ export default function SnsView({ posts, followers, ga4 }: { posts: SnsPostRow[]
     setCell((prev) => (prev && prev.pillar === next.pillar && prev.platform === next.platform ? null : next));
 
   return (
-    <div className="space-y-4">
-    <div className="flex items-start gap-4">
-      <div className="w-3/5 space-y-4">
+    <div className="grid items-start gap-4" style={{ gridTemplateColumns: "minmax(0, 1fr) 340px" }}>
+      <div className="space-y-4">
         <div className="inline-flex gap-1 rounded-lg bg-slate-100 p-1">
           {tabs.map((t) => (
             <button
@@ -435,6 +434,32 @@ export default function SnsView({ posts, followers, ga4 }: { posts: SnsPostRow[]
                 <Wow value={c.value} previous={c.prev} />
               </div>
             ))}
+          </div>
+        </Section>
+
+        <Section label="Daily pillar activity & sessions">
+          <div className="w-full" style={{ height: 280 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={pillarActivity.bar} margin={{ top: 16, right: 8, bottom: 0, left: -8 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" strokeWidth={0.5} vertical={false} />
+                <XAxis dataKey="ts" type="number" scale="time" domain={[startMs, endMs]} tickFormatter={fmtTick} tickLine={false} axisLine={false} minTickGap={24} tick={{ fill: "#94a3b8", fontSize: 10 }} />
+                <YAxis yAxisId="left" tickLine={false} axisLine={false} tick={{ fill: "#94a3b8", fontSize: 10 }} />
+                <Tooltip content={<PillarTooltip dayInfo={pillarActivity.dayInfo} />} />
+                <Bar yAxisId="left" dataKey="sessions" name="Sessions" fill="#cbd5e1" radius={[3, 3, 0, 0]} barSize={14} label={barTopDots(pillarActivity.bar)} />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[10px] text-slate-500">
+            {Object.entries(PILLAR_COLORS).map(([name, color]) => (
+              <span key={name} className="flex items-center gap-1.5">
+                <span style={{ width: 8, height: 8, borderRadius: 9999, backgroundColor: color }} />
+                {name}
+              </span>
+            ))}
+            <span className="flex items-center gap-1.5">
+              <span style={{ width: 10, height: 8, borderRadius: 2, backgroundColor: "#cbd5e1" }} />
+              Bar = sessions
+            </span>
           </div>
         </Section>
 
@@ -502,7 +527,7 @@ export default function SnsView({ posts, followers, ga4 }: { posts: SnsPostRow[]
         </Section>
       </div>
 
-      <div className="w-2/5 space-y-4">
+      <div className="space-y-4">
         <Section label="Monthly targets">
           <table className="w-full text-xs">
             <thead>
@@ -540,6 +565,37 @@ export default function SnsView({ posts, followers, ga4 }: { posts: SnsPostRow[]
               })}
             </tbody>
           </table>
+        </Section>
+
+        <Section label="Sessions by UTM campaign">
+          <div className="flex items-center gap-4">
+            <div className="relative shrink-0" style={{ width: 150, height: 150 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={campaignDonut} dataKey="value" nameKey="name" innerRadius={48} outerRadius={70} paddingAngle={2} stroke="none">
+                    {campaignDonut.map((c) => (
+                      <Cell key={c.name} fill={c.color} />
+                    ))}
+                  </Pie>
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                <span className="text-[15px] font-semibold text-slate-900">{formatNumber(campTotal)}</span>
+                <span className="text-[9px] text-slate-400">sessions</span>
+              </div>
+            </div>
+            <div className="min-w-0 flex-1 space-y-1.5">
+              {campaignDonut.map((c) => (
+                <div key={c.name} className="flex items-center gap-2 text-[11px]">
+                  <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: c.color }} />
+                  <span className="min-w-0 flex-1 truncate text-slate-600">{c.name}</span>
+                  <span className="shrink-0 font-medium tabular-nums text-slate-700">{formatNumber(c.value)}</span>
+                  <span className="w-9 shrink-0 text-right tabular-nums text-slate-400">{campTotal ? ((c.value / campTotal) * 100).toFixed(0) : 0}%</span>
+                </div>
+              ))}
+              {campaignDonut.length === 0 && <p className="text-xs text-slate-400">No campaign sessions.</p>}
+            </div>
+          </div>
         </Section>
 
         <Section label="Pillar performance">
@@ -594,66 +650,6 @@ export default function SnsView({ posts, followers, ga4 }: { posts: SnsPostRow[]
                 <ExternalLink className="h-3 w-3 shrink-0 text-slate-400" />
               </a>
             ))}
-          </div>
-        </Section>
-      </div>
-    </div>
-
-      <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <Section label="Daily pillar activity & sessions">
-          <div className="w-full" style={{ height: 280 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={pillarActivity.bar} margin={{ top: 16, right: 8, bottom: 0, left: -8 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" strokeWidth={0.5} vertical={false} />
-                <XAxis dataKey="ts" type="number" scale="time" domain={[startMs, endMs]} tickFormatter={fmtTick} tickLine={false} axisLine={false} minTickGap={24} tick={{ fill: "#94a3b8", fontSize: 10 }} />
-                <YAxis yAxisId="left" tickLine={false} axisLine={false} tick={{ fill: "#94a3b8", fontSize: 10 }} />
-                <Tooltip content={<PillarTooltip dayInfo={pillarActivity.dayInfo} />} />
-                <Bar yAxisId="left" dataKey="sessions" name="Sessions" fill="#cbd5e1" radius={[3, 3, 0, 0]} barSize={14} label={barTopDots(pillarActivity.bar)} />
-              </ComposedChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[10px] text-slate-500">
-            {Object.entries(PILLAR_COLORS).map(([name, color]) => (
-              <span key={name} className="flex items-center gap-1.5">
-                <span style={{ width: 8, height: 8, borderRadius: 9999, backgroundColor: color }} />
-                {name}
-              </span>
-            ))}
-            <span className="flex items-center gap-1.5">
-              <span style={{ width: 10, height: 8, borderRadius: 2, backgroundColor: "#cbd5e1" }} />
-              Bar = sessions
-            </span>
-          </div>
-        </Section>
-
-        <Section label="Sessions by UTM campaign">
-          <div className="flex items-center gap-4" style={{ height: 280 }}>
-            <div className="relative shrink-0" style={{ width: 150, height: 150 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={campaignDonut} dataKey="value" nameKey="name" innerRadius={48} outerRadius={70} paddingAngle={2} stroke="none">
-                    {campaignDonut.map((c) => (
-                      <Cell key={c.name} fill={c.color} />
-                    ))}
-                  </Pie>
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-                <span className="text-[15px] font-semibold text-slate-900">{formatNumber(campTotal)}</span>
-                <span className="text-[9px] text-slate-400">sessions</span>
-              </div>
-            </div>
-            <div className="min-w-0 flex-1 space-y-1.5">
-              {campaignDonut.map((c) => (
-                <div key={c.name} className="flex items-center gap-2 text-[11px]">
-                  <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: c.color }} />
-                  <span className="min-w-0 flex-1 truncate text-slate-600">{c.name}</span>
-                  <span className="shrink-0 font-medium tabular-nums text-slate-700">{formatNumber(c.value)}</span>
-                  <span className="w-9 shrink-0 text-right tabular-nums text-slate-400">{campTotal ? ((c.value / campTotal) * 100).toFixed(0) : 0}%</span>
-                </div>
-              ))}
-              {campaignDonut.length === 0 && <p className="text-xs text-slate-400">No campaign sessions.</p>}
-            </div>
           </div>
         </Section>
       </div>
