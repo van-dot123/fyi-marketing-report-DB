@@ -27,6 +27,7 @@ export interface MetaDay {
   leads: number;
   clicks: number;
   impressions: number;
+  reach: number;
 }
 
 const META_PRODUCTS = ["April", "Job-page", "K-Tuvi"];
@@ -42,6 +43,7 @@ export async function getMetaDays(): Promise<MetaDay[]> {
   const leadsIdx = idx("Website Lead");
   const clicksIdx = idx("Link Clicks");
   const impressionsIdx = idx("Impressions");
+  const reachIdx = idx("Reach");
   const adNameIdx = idx("Ad Name");
   const audienceIdx = idx("Audience");
 
@@ -60,6 +62,7 @@ export async function getMetaDays(): Promise<MetaDay[]> {
         leads: parseMetaNum(r[leadsIdx]),
         clicks: parseMetaNum(r[clicksIdx]),
         impressions: parseMetaNum(r[impressionsIdx]),
+        reach: reachIdx >= 0 ? parseMetaNum(r[reachIdx]) : 0,
       };
     })
     .filter((d) => d.date);

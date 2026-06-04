@@ -357,6 +357,7 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
     campaign === "Salary Page"
       ? [
           { label: "Spend ₩", value: salaryT.spend, kind: "krw", prev: prevSalaryT.spend },
+          { label: "Reach", value: salaryT.reach, kind: "count", prev: prevSalaryT.reach },
           { label: "Sessions", value: salarySessions, kind: "count", prev: prevSalarySessions },
           { label: "Submissions", value: paidSubmissions, kind: "count", prev: prevSubPaid },
           { label: "Cost/sub", value: cdiv(salaryT.spend, paidSubmissions), kind: "krw", prev: cdiv(prevSalaryT.spend, prevSubPaid) },
@@ -365,6 +366,7 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
       : campaign === "Job Page"
       ? [
           { label: "Spend ₩", value: jobT.spend, kind: "krw", prev: prevJobT.spend },
+          { label: "Reach", value: jobT.reach, kind: "count", prev: prevJobT.reach },
           { label: "Sessions", value: jobSessions, kind: "count", prev: prevJobSessions },
           { label: "Job Applications", value: jobAppsFiltered, kind: "count", prev: prevJobFiltered },
           { label: "Cost/job app", value: cdiv(jobT.spend, jobAppsFiltered), kind: "krw", prev: cdiv(prevJobT.spend, prevJobFiltered) },
@@ -372,6 +374,7 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
         ]
       : [
           { label: "Spend ₩", value: allT.spend, kind: "krw", prev: prevAllT.spend },
+          { label: "Reach", value: allT.reach, kind: "count", prev: prevAllT.reach },
           { label: "Sessions", value: allMetaSessions, kind: "count", prev: prevAllMetaSessions },
           { label: "Submissions", value: paidSubmissions, kind: "count", prev: prevSubPaid },
           { label: "Job Apps", value: jobAppsAll, kind: "count", prev: prevJobAll },

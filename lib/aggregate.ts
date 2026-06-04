@@ -85,9 +85,11 @@ export function metaTotals(days: MetaDay[]): Record<string, number> {
   const leads = sum(days.map((d) => d.leads));
   const clicks = sum(days.map((d) => d.clicks));
   const impr = sum(days.map((d) => d.impressions));
+  const reach = sum(days.map((d) => d.reach));
   return {
     spend,
     leads,
+    reach,
     cpl: leads ? Math.round(spend / leads) : 0,
     ctr: impr ? clicks / impr : 0,
   };
