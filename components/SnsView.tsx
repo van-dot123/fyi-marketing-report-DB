@@ -4,10 +4,14 @@ import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import {
   Bar,
   CartesianGrid,
+  Cell,
   ComposedChart,
   Line,
+  Pie,
+  PieChart,
   ReferenceLine,
   ResponsiveContainer,
+  Scatter,
   Tooltip,
   XAxis,
   YAxis,
@@ -30,6 +34,46 @@ import { Unit, formatNumber, formatPercent, formatValue } from "@/lib/format";
 
 const PLATFORM_SOURCE: Record<string, string> = { Facebook: "facebook", Instagram: "instagram", Threads: "threads" };
 const ORGANIC = new Set(["facebook", "instagram", "threads"]);
+
+const PILLAR_COLORS: Record<string, string> = {
+  "Data-report": "#378ADD",
+  "Job-post": "#534AB7",
+  Branding: "#D4537E",
+  "Ask-100": "#1D9E75",
+  "How-to": "#BA7517",
+  Engagement: "#888780",
+};
+
+const PURPLE_RAMP = ["#534AB7", "#6C63CC", "#7F77DD", "#9A93E6", "#B6B0EF", "#CFCBF5", "#E2DFFA", "#EFEDFC"];
+
+function PillarTooltip({ active, label, dayInfo }: any) {
+  if (!active || label == null || !dayInfo) return null;
+  const info = dayInfo.get(label);
+  if (!info) return null;
+  return (
+    <div style={{ background: "#ffffff", border: "0.5px solid #cbd5e1", borderRadius: 6, padding: "8px 10px", fontSize: 11, maxWidth: 220 }}>
+      <p className="font-medium text-slate-700">{fmtTick(label)}</p>
+      <p className="text-slate-500">Sessions: {formatNumber(info.sessions)}</p>
+      {info.posts.length > 0 && <p className="mt-1 text-slate-400">{info.posts.length} post(s)</p>}
+      {info.posts.map((pl: string, i: number) => (
+        <div key={i} className="flex items-center gap-1.5">
+          <span style={{ width: 8, height: 8, borderRadius: 9999, backgroundColor: PILLAR_COLORS[pl] ?? "#cbd5e1" }} />
+          <span className="text-slate-600">{pl}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function sessionBarLabel(props: any) {
+  const { x, y, width, value } = props;
+  if (!value || value <= 100) return <g />;
+  return (
+    <text x={x + width / 2} y={y - 3} textAnchor="middle" fontSize={9} fill="#64748b">
+      {formatNumber(value)}
+    </text>
+  );
+}
 
 interface Cell {
   pillar: string;
@@ -264,6 +308,57 @@ export default function SnsView({ posts, followers, ga4 }: { posts: SnsPostRow[]
     [tabPosts, cell]
   );
 
+  const pillarActivity = useMemo(() => {
+    const sessByDay = new Map<string, number>();
+    for (const d of ga4Days) if (ORGANIC.has(d.source)) sessByDay.set(d.date, (sessByDay.get(d.date) ?? 0) + d.sessions);
+    const postsByDay = new Map<string, string[]>();
+    for (const p of ranged) {
+      const arr = postsByDay.get(p.date) ?? [];
+      arr.push(p.pillar);
+      postsByDay.set(p.date, arr);
+    }
+    const bar: { ts: number; sessions: number }[] = [];
+    const points: { ts: number; y: number; color: string }[] = [];
+    const dayInfo = new Map<number, { sessions: number; posts: string[] }>();
+    let maxStack = 1;
+    for (const d of dates) {
+      const ts = dayMs(d);
+      if (ts < startMs || ts > endMs) continue;
+      const sessions = sessByDay.get(d) ?? 0;
+      const pls = postsByDay.get(d) ?? [];
+      bar.push({ ts, sessions });
+      dayInfo.set(ts, { sessions, posts: pls });
+      pls.forEach((pl, idx) => points.push({ ts, y: idx + 1, color: PILLAR_COLORS[pl] ?? "#cbd5e1" }));
+      maxStack = Math.max(maxStack, pls.length);
+    }
+    return { bar, points, dayInfo, maxStack };
+  }, [ga4Days, ranged, dates, startMs, endMs]);
+
+  const campaignDonut = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const d of ga4Days) {
+      if (!ORGANIC.has(d.source)) continue;
+      const name = d.campaign || "(organic)";
+      m.set(name, (m.get(name) ?? 0) + d.sessions);
+    }
+    const sorted = [...m.entries()].sort((a, b) => b[1] - a[1]);
+    const list = sorted.slice(0, 8).map(([name, value]) => ({ name, value }));
+    const otherSum = sorted.slice(8).reduce((s, [, v]) => s + v, 0);
+    if (otherSum > 0) list.push({ name: "Other", value: otherSum });
+    let p = 0;
+    return list.map((c) => {
+      let color: string;
+      if (c.name === "(organic)") color = "#1D9E75";
+      else if (c.name === "Other") color = "#94a3b8";
+      else {
+        color = PURPLE_RAMP[p % PURPLE_RAMP.length];
+        p++;
+      }
+      return { ...c, color };
+    });
+  }, [ga4Days]);
+  const campTotal = campaignDonut.reduce((s, c) => s + c.value, 0);
+
   const rangeNotes = notes.filter((n) => n.date >= start && n.date <= end);
   const markerRowSeen = new Map<string, number>();
   const markers = rangeNotes.map((n) => {
@@ -280,6 +375,7 @@ export default function SnsView({ posts, followers, ga4 }: { posts: SnsPostRow[]
     setCell((prev) => (prev && prev.pillar === next.pillar && prev.platform === next.platform ? null : next));
 
   return (
+    <div className="space-y-4">
     <div className="flex items-start gap-4">
       <div className="w-3/5 space-y-4">
         <div className="inline-flex gap-1 rounded-lg bg-slate-100 p-1">
@@ -469,6 +565,70 @@ export default function SnsView({ posts, followers, ga4 }: { posts: SnsPostRow[]
           </div>
         </Section>
       </div>
+    </div>
+
+      <Section label="Daily pillar activity & sessions">
+        <div className="w-full" style={{ height: 240 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <ComposedChart data={pillarActivity.bar} margin={{ top: 16, right: 8, bottom: 0, left: -8 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" strokeWidth={0.5} vertical={false} />
+              <XAxis dataKey="ts" type="number" scale="time" domain={[startMs, endMs]} tickFormatter={fmtTick} tickLine={false} axisLine={false} minTickGap={24} tick={{ fill: "#94a3b8", fontSize: 10 }} />
+              <YAxis yAxisId="left" tickLine={false} axisLine={false} tick={{ fill: "#94a3b8", fontSize: 10 }} />
+              <YAxis yAxisId="dots" orientation="right" domain={[0, pillarActivity.maxStack + 1]} hide />
+              <Tooltip content={<PillarTooltip dayInfo={pillarActivity.dayInfo} />} />
+              <Bar yAxisId="left" dataKey="sessions" name="Sessions" fill="#cbd5e1" radius={[3, 3, 0, 0]} barSize={14} label={sessionBarLabel} />
+              <Scatter yAxisId="dots" data={pillarActivity.points} dataKey="y">
+                {pillarActivity.points.map((pt, i) => (
+                  <Cell key={i} fill={pt.color} />
+                ))}
+              </Scatter>
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[10px] text-slate-500">
+          {Object.entries(PILLAR_COLORS).map(([name, color]) => (
+            <span key={name} className="flex items-center gap-1.5">
+              <span style={{ width: 8, height: 8, borderRadius: 9999, backgroundColor: color }} />
+              {name}
+            </span>
+          ))}
+          <span className="flex items-center gap-1.5">
+            <span style={{ width: 10, height: 8, borderRadius: 2, backgroundColor: "#cbd5e1" }} />
+            Bar = sessions
+          </span>
+        </div>
+      </Section>
+
+      <Section label="Sessions by UTM campaign">
+        <div className="flex items-center gap-4">
+          <div className="relative shrink-0" style={{ width: 150, height: 150 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie data={campaignDonut} dataKey="value" nameKey="name" innerRadius={48} outerRadius={70} paddingAngle={2} stroke="none">
+                  {campaignDonut.map((c) => (
+                    <Cell key={c.name} fill={c.color} />
+                  ))}
+                </Pie>
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+              <span className="text-[15px] font-semibold text-slate-900">{formatNumber(campTotal)}</span>
+              <span className="text-[9px] text-slate-400">sessions</span>
+            </div>
+          </div>
+          <div className="min-w-0 flex-1 space-y-1.5">
+            {campaignDonut.map((c) => (
+              <div key={c.name} className="flex items-center gap-2 text-[11px]">
+                <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: c.color }} />
+                <span className="min-w-0 flex-1 truncate text-slate-600">{c.name}</span>
+                <span className="shrink-0 font-medium tabular-nums text-slate-700">{formatNumber(c.value)}</span>
+                <span className="w-9 shrink-0 text-right tabular-nums text-slate-400">{campTotal ? ((c.value / campTotal) * 100).toFixed(0) : 0}%</span>
+              </div>
+            ))}
+            {campaignDonut.length === 0 && <p className="text-xs text-slate-400">No campaign sessions.</p>}
+          </div>
+        </div>
+      </Section>
     </div>
   );
 }
