@@ -407,7 +407,7 @@ export default function SnsView({ posts, followers, ga4 }: { posts: SnsPostRow[]
     setCell((prev) => (prev && prev.pillar === next.pillar && prev.platform === next.platform ? null : next));
 
   return (
-    <div className="grid items-start gap-4" style={{ gridTemplateColumns: "minmax(0, 1fr) 340px" }}>
+    <div className="grid items-start gap-4" style={{ gridTemplateColumns: "3fr 2fr" }}>
       <div className="space-y-4">
         <div className="inline-flex gap-1 rounded-lg bg-slate-100 p-1">
           {tabs.map((t) => (
