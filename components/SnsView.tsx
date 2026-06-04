@@ -11,7 +11,6 @@ import {
   PieChart,
   ReferenceLine,
   ResponsiveContainer,
-  Scatter,
   Tooltip,
   XAxis,
   YAxis,
@@ -65,14 +64,43 @@ function PillarTooltip({ active, label, dayInfo }: any) {
   );
 }
 
-function sessionBarLabel(props: any) {
-  const { x, y, width, value } = props;
-  if (!value || value <= 100) return <g />;
-  return (
-    <text x={x + width / 2} y={y - 3} textAnchor="middle" fontSize={9} fill="#64748b">
-      {formatNumber(value)}
-    </text>
-  );
+// Stacked pillar dots floating above each bar, with the session count on top.
+const DOT_R = 4; // dot radius (px)
+const DOT_STEP = 10; // vertical center-to-center spacing (px)
+const DOT_BASE = 6; // gap between bar top and first dot center (px)
+const MAX_DOTS = 5; // dots shown before collapsing into a "+N" label
+
+function barTopDots(days: { pillars: string[] }[]) {
+  function BarTopLabel(props: any) {
+    const { x, y, width, value, index } = props;
+    if (x == null || y == null) return <g />;
+    const pillars = days[index]?.pillars ?? [];
+    const cx = x + width / 2;
+    const shown = pillars.slice(0, MAX_DOTS);
+    const extra = pillars.length - shown.length;
+    // Highest occupied y above the bar — count label sits above it.
+    let topY = y;
+    if (shown.length) topY = y - (shown.length - 1) * DOT_STEP - DOT_BASE;
+    if (extra > 0) topY = y - MAX_DOTS * DOT_STEP - DOT_BASE;
+    return (
+      <g>
+        {shown.map((pl: string, i: number) => (
+          <circle key={i} cx={cx} cy={y - i * DOT_STEP - DOT_BASE} r={DOT_R} fill={PILLAR_COLORS[pl] ?? "#cbd5e1"} />
+        ))}
+        {extra > 0 && (
+          <text x={cx} y={y - MAX_DOTS * DOT_STEP - DOT_BASE} textAnchor="middle" dominantBaseline="middle" fontSize={8} fontWeight={600} fill="#64748b">
+            +{extra}
+          </text>
+        )}
+        {value > 100 && (
+          <text x={cx} y={topY - 9} textAnchor="middle" fontSize={9} fill="#64748b">
+            {formatNumber(value)}
+          </text>
+        )}
+      </g>
+    );
+  }
+  return BarTopLabel;
 }
 
 interface Cell {
@@ -317,21 +345,17 @@ export default function SnsView({ posts, followers, ga4 }: { posts: SnsPostRow[]
       arr.push(p.pillar);
       postsByDay.set(p.date, arr);
     }
-    const bar: { ts: number; sessions: number }[] = [];
-    const points: { ts: number; y: number; color: string }[] = [];
+    const bar: { ts: number; sessions: number; pillars: string[] }[] = [];
     const dayInfo = new Map<number, { sessions: number; posts: string[] }>();
-    let maxStack = 1;
     for (const d of dates) {
       const ts = dayMs(d);
       if (ts < startMs || ts > endMs) continue;
       const sessions = sessByDay.get(d) ?? 0;
       const pls = postsByDay.get(d) ?? [];
-      bar.push({ ts, sessions });
+      bar.push({ ts, sessions, pillars: pls });
       dayInfo.set(ts, { sessions, posts: pls });
-      pls.forEach((pl, idx) => points.push({ ts, y: idx + 1, color: PILLAR_COLORS[pl] ?? "#cbd5e1" }));
-      maxStack = Math.max(maxStack, pls.length);
     }
-    return { bar, points, dayInfo, maxStack };
+    return { bar, dayInfo };
   }, [ga4Days, ranged, dates, startMs, endMs]);
 
   const campaignDonut = useMemo(() => {
@@ -583,14 +607,8 @@ export default function SnsView({ posts, followers, ga4 }: { posts: SnsPostRow[]
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" strokeWidth={0.5} vertical={false} />
                 <XAxis dataKey="ts" type="number" scale="time" domain={[startMs, endMs]} tickFormatter={fmtTick} tickLine={false} axisLine={false} minTickGap={24} tick={{ fill: "#94a3b8", fontSize: 10 }} />
                 <YAxis yAxisId="left" tickLine={false} axisLine={false} tick={{ fill: "#94a3b8", fontSize: 10 }} />
-                <YAxis yAxisId="dots" orientation="right" domain={[0, pillarActivity.maxStack + 1]} hide />
                 <Tooltip content={<PillarTooltip dayInfo={pillarActivity.dayInfo} />} />
-                <Bar yAxisId="left" dataKey="sessions" name="Sessions" fill="#cbd5e1" radius={[3, 3, 0, 0]} barSize={14} label={sessionBarLabel} />
-                <Scatter yAxisId="dots" data={pillarActivity.points} dataKey="y" shape={(props: any) => <circle cx={props.cx} cy={props.cy} r={4} fill={props.fill} />}>
-                  {pillarActivity.points.map((pt, i) => (
-                    <Cell key={i} fill={pt.color} />
-                  ))}
-                </Scatter>
+                <Bar yAxisId="left" dataKey="sessions" name="Sessions" fill="#cbd5e1" radius={[3, 3, 0, 0]} barSize={14} label={barTopDots(pillarActivity.bar)} />
               </ComposedChart>
             </ResponsiveContainer>
           </div>
