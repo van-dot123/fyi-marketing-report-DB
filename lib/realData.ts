@@ -9,6 +9,14 @@ async function safe(tab: string): Promise<string[][]> {
   }
 }
 
+async function safeRaw(tab: string): Promise<string[][]> {
+  try {
+    return await getSheetData(tab, true);
+  } catch {
+    return [];
+  }
+}
+
 export interface MetaDay {
   date: string;
   week: string;
@@ -21,25 +29,43 @@ export interface MetaDay {
   impressions: number;
 }
 
+const META_PRODUCTS = ["April", "Job-page", "K-Tuvi"];
+
 export async function getMetaDays(): Promise<MetaDay[]> {
-  const rows = await safe("meta_ad_raw_data");
-  return rows
-    .filter((r) => String(r[0] ?? "").toUpperCase().includes("FYI"))
+  const rows = await safeRaw("meta_ad_raw_data");
+  if (rows.length === 0) return [];
+  const headers = rows[0];
+  const idx = (name: string) => headers.indexOf(name);
+  const dayIdx = idx("Day");
+  const spendIdx = idx("Amount Spent");
+  const productIdx = idx("Product");
+  const leadsIdx = idx("Website Lead");
+  const clicksIdx = idx("Link Clicks");
+  const impressionsIdx = idx("Impressions");
+  const adNameIdx = idx("Ad Name");
+  const audienceIdx = idx("Audience");
+
+  const result = rows
+    .slice(1)
+    .filter((r) => productIdx < 0 || META_PRODUCTS.includes(r[productIdx]))
     .map((r) => {
-      const date = dayOf(r[3]);
+      const date = dayOf(r[dayIdx]);
       return {
         date,
         week: weekLabel(date),
-        product: r[18] ?? "",
-        adName: r[2] ?? "",
-        audience: r[22] ?? "",
-        spend: parseMetaNum(r[9]),
-        leads: parseMetaNum(r[14]),
-        clicks: parseMetaNum(r[11]),
-        impressions: parseMetaNum(r[5]),
+        product: r[productIdx] ?? "",
+        adName: r[adNameIdx] ?? "",
+        audience: r[audienceIdx] ?? "",
+        spend: parseMetaNum(r[spendIdx]),
+        leads: parseMetaNum(r[leadsIdx]),
+        clicks: parseMetaNum(r[clicksIdx]),
+        impressions: parseMetaNum(r[impressionsIdx]),
       };
     })
     .filter((d) => d.date);
+  const lastDate = result.reduce((m, d) => (d.date > m ? d.date : m), "");
+  console.log(`[sheets] meta_ad_raw_data: ${result.length} rows, last date ${lastDate || "n/a"}`);
+  return result;
 }
 
 export type Ga4Channel = "paid" | "organic" | "other";
@@ -48,6 +74,9 @@ export interface Ga4Day {
   date: string;
   week: string;
   channel: Ga4Channel;
+  source: string;
+  campaign: string;
+  landingPage: string;
   sessions: number;
   conversions: number;
 }
@@ -55,22 +84,40 @@ export interface Ga4Day {
 const ORGANIC_SOURCES = new Set(["facebook", "instagram", "threads"]);
 
 export async function getGa4Days(): Promise<Ga4Day[]> {
-  const rows = await safe("GA4_raw_data");
-  return rows
+  const rows = await safeRaw("GA4_raw_data");
+  if (rows.length === 0) return [];
+  const headers = rows[0];
+  const idx = (name: string) => headers.indexOf(name);
+  const dateIdx = idx("Date");
+  const cleanedSourceIdx = idx("Cleaned Source");
+  const campaignIdx = idx("Campaign");
+  const landingPageIdx = idx("Landing Page");
+  const sessionsIdx = idx("Sessions");
+  const conversionsIdx = idx("Conversions");
+  const numCell = (s: string) => parseInt(String(s ?? "").replace(/,/g, "."), 10) || 0;
+
+  const result = rows
+    .slice(1)
     .map((r) => {
-      const date = dayOf(r[0]);
-      const src = String(r[2] ?? "").toLowerCase();
+      const date = dayOf(r[dateIdx]);
+      const src = String(r[cleanedSourceIdx] ?? "").toLowerCase();
       const channel: Ga4Channel =
         src === "meta" ? "paid" : ORGANIC_SOURCES.has(src) ? "organic" : "other";
       return {
         date,
         week: weekLabel(date),
         channel,
-        sessions: intNum(r[4]),
-        conversions: intNum(r[10]),
+        source: src,
+        campaign: String(r[campaignIdx] ?? ""),
+        landingPage: String(r[landingPageIdx] ?? ""),
+        sessions: numCell(r[sessionsIdx]),
+        conversions: numCell(r[conversionsIdx]),
       };
     })
     .filter((d) => d.date);
+  const lastDate = result.reduce((m, d) => (d.date > m ? d.date : m), "");
+  console.log(`[sheets] GA4_raw_data: ${result.length} rows, last date ${lastDate || "n/a"}`);
+  return result;
 }
 
 export type SnsPlatform = "Facebook" | "Instagram" | "Threads";
@@ -89,7 +136,12 @@ export interface SnsPostRow {
   url: string;
 }
 
-function mapMeta(r: string[], platform: SnsPlatform): SnsPostRow {
+function colIndex(headers: string[], name: string): number {
+  const lc = name.trim().toLowerCase();
+  return (headers ?? []).findIndex((h) => String(h ?? "").trim().toLowerCase() === lc);
+}
+
+function mapMeta(r: string[], platform: SnsPlatform, pillarIdx: number): SnsPostRow {
   const date = dayOf(r[0]);
   const interactions = intNum(r[5]);
   const comments = intNum(r[6]);
@@ -98,7 +150,7 @@ function mapMeta(r: string[], platform: SnsPlatform): SnsPostRow {
     platform,
     date,
     week: weekLabel(date),
-    pillar: r[10] || "Uncategorized",
+    pillar: (pillarIdx >= 0 ? r[pillarIdx] : "") || "Uncategorized",
     views: intNum(r[3]),
     reach: intNum(r[4]),
     interactions,
@@ -109,7 +161,7 @@ function mapMeta(r: string[], platform: SnsPlatform): SnsPostRow {
   };
 }
 
-function mapThreads(r: string[]): SnsPostRow {
+function mapThreads(r: string[], pillarIdx: number): SnsPostRow {
   const date = dayOf(r[0]);
   const likes = intNum(r[4]);
   const comments = intNum(r[5]);
@@ -121,7 +173,7 @@ function mapThreads(r: string[]): SnsPostRow {
     platform: "Threads",
     date,
     week: weekLabel(date),
-    pillar: r[10] || "Uncategorized",
+    pillar: (pillarIdx >= 0 ? r[pillarIdx] : "") || "Uncategorized",
     views,
     reach: views,
     interactions: likes + comments + reposts + quotes + shares,
@@ -132,15 +184,43 @@ function mapThreads(r: string[]): SnsPostRow {
   };
 }
 
+function lastFollower(rows: string[][]): number {
+  if (rows.length < 2) return 0;
+  const fIdx = colIndex(rows[0], "follower");
+  if (fIdx < 0) return 0;
+  for (let i = rows.length - 1; i >= 1; i--) {
+    const v = intNum(rows[i][fIdx]);
+    if (v > 0) return v;
+  }
+  return 0;
+}
+
+function snsPostsFrom(fb: string[][], ins: string[][], th: string[][]): SnsPostRow[] {
+  const pillar = (rows: string[][]) => colIndex(rows[0] ?? [], "Pillar");
+  return [
+    ...fb.slice(1).map((r) => mapMeta(r, "Facebook", pillar(fb))),
+    ...ins.slice(1).map((r) => mapMeta(r, "Instagram", pillar(ins))),
+    ...th.slice(1).map((r) => mapThreads(r, pillar(th))),
+  ].filter((p) => p.date);
+}
+
 export async function getSnsPosts(): Promise<SnsPostRow[]> {
   const [fb, ins, th] = await Promise.all([
-    safe("fb_post_metrics"),
-    safe("ins_post_metrics"),
-    safe("threads_post_metrics"),
+    safeRaw("fb_post_metrics"),
+    safeRaw("ins_post_metrics"),
+    safeRaw("threads_post_metrics"),
   ]);
-  return [
-    ...fb.map((r) => mapMeta(r, "Facebook")),
-    ...ins.map((r) => mapMeta(r, "Instagram")),
-    ...th.map(mapThreads),
-  ].filter((p) => p.date);
+  return snsPostsFrom(fb, ins, th);
+}
+
+export async function getSnsData(): Promise<{ posts: SnsPostRow[]; followers: Record<SnsPlatform, number> }> {
+  const [fb, ins, th] = await Promise.all([
+    safeRaw("fb_post_metrics"),
+    safeRaw("ins_post_metrics"),
+    safeRaw("threads_post_metrics"),
+  ]);
+  return {
+    posts: snsPostsFrom(fb, ins, th),
+    followers: { Facebook: lastFollower(fb), Instagram: lastFollower(ins), Threads: lastFollower(th) },
+  };
 }

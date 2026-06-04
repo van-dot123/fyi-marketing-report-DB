@@ -11,7 +11,7 @@ import EmptyState from "@/components/EmptyState";
 import { useDateRange } from "@/components/DateRangePicker";
 import { Ga4Day, MetaDay } from "@/lib/realData";
 import { funnelWeekly, inRange } from "@/lib/aggregate";
-import { formatCurrency, formatNumber, formatPct, formatPercent } from "@/lib/format";
+import { formatKRW, formatNumber, formatPct, formatPercent } from "@/lib/format";
 
 const CR_BENCHMARKS = [
   { green: 0.03, amber: 0.01 },
@@ -104,17 +104,17 @@ export default function FunnelView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day
                 return (
                   <tr key={w.week} className="border-b border-slate-50 last:border-0">
                     <td className="py-3 font-medium text-slate-800">{w.week}</td>
-                    <td className="py-3 text-right text-slate-600">{formatCurrency(w.spend)}</td>
+                    <td className="py-3 text-right text-slate-600">{formatKRW(w.spend)}</td>
                     <td className="py-3 text-right text-slate-600">{formatNumber(w.sessions)}</td>
                     <td className="py-3 text-right text-slate-600">{formatPercent(convRate)}</td>
                     <td className="py-3 text-right text-slate-600">{formatNumber(w.conversions)}</td>
-                    <td className="py-3 text-right font-medium text-slate-800">{formatCurrency(costPerConv)}</td>
+                    <td className="py-3 text-right font-medium text-slate-800">{formatKRW(costPerConv)}</td>
                     <td className="py-3 text-right">
                       {wow === null ? (
                         <span className="text-slate-300">—</span>
                       ) : (
                         <span className={["inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold", positive ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-600", flagged ? "ring-1 ring-amber-300" : ""].join(" ")}>
-                          {formatPct(wow)}{flagged ? " ⚠" : ""}
+                          {formatPct(wow * 100)}{flagged ? " ⚠" : ""}
                         </span>
                       )}
                     </td>

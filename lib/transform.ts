@@ -1,34 +1,22 @@
 import {
+  ALLOWED_META_PRODUCTS,
   GA4Row,
+  JOB_PRODUCTS,
   MetaProduct,
   MetaRow,
+  SALARY_PRODUCTS,
   SNSPlatform,
   SNSPost,
   WeeklyMeta,
   WoWResult,
+  campaignTypeOf,
 } from "@/types";
-
-const META_COLS = {
-  campaign: 0,
-  date: 3,
-  product: 18,
-  ad_name: 2,
-  impressions: 5,
-  spend: 9,
-  clicks: 11,
-  leads: 14,
-  audience: 22,
-};
-
-const META_CAMPAIGN_INCLUDES = "FYI";
 
 const SNS_COLS = {
   facebook: { date: 0, pillar: 1, reach: 2, impressions: 3, engagement: 4 },
   instagram: { date: 0, pillar: 1, reach: 2, impressions: 3, engagement: 4 },
   threads: { date: 0, pillar: 1, views: 2, impressions: 3, engagement: 4 },
 };
-
-const GA4_COLS = { date: 0, source: 2, sessions: 4, conversions: 10 };
 
 export const PILLAR_MAP: Record<string, string> = {};
 
@@ -52,27 +40,47 @@ function pillar(key: string): string {
   return PILLAR_MAP[key] ?? "Uncategorized";
 }
 
+export function isSalaryProduct(product: string): boolean {
+  return SALARY_PRODUCTS.includes(product as MetaProduct);
+}
+
+export function isJobProduct(product: string): boolean {
+  return JOB_PRODUCTS.includes(product as MetaProduct);
+}
+
 export function parseMetaAds(rows: string[][]): MetaRow[] {
-  return rows
-    .filter((r) =>
-      String(r[META_COLS.campaign] ?? "")
-        .toUpperCase()
-        .includes(META_CAMPAIGN_INCLUDES)
-    )
-    .map((r) => {
-      const date = isoDate(r[META_COLS.date]);
-      return {
-        date,
-        isoWeek: getISOWeek(date),
-        product: r[META_COLS.product] as MetaProduct,
-        adName: r[META_COLS.ad_name] ?? "",
-        audience: r[META_COLS.audience] ?? "",
-        spend: num(r[META_COLS.spend]),
-        leads: num(r[META_COLS.leads]),
-        clicks: num(r[META_COLS.clicks]),
-        impressions: num(r[META_COLS.impressions]),
-      };
-    });
+  const headers = rows[0] ?? [];
+  const idx = (name: string) => headers.indexOf(name);
+  const dayIdx = idx("Day");
+  const spendIdx = idx("Amount Spent");
+  const productIdx = idx("Product");
+  const leadsIdx = idx("Website Lead");
+  const clicksIdx = idx("Link Clicks");
+  const impressionsIdx = idx("Impressions");
+  const ctrIdx = idx("CTR (Link Click-Through Rate)");
+  const adNameIdx = idx("Ad Name");
+  const campaignIdx = idx("Campaign Name");
+  const audienceIdx = idx("Audience");
+  const objectiveIdx = idx("MT_Objective");
+
+  const dataRows = rows.slice(1).filter((r) => ALLOWED_META_PRODUCTS.includes(r[productIdx] as MetaProduct));
+
+  return dataRows.map((r) => {
+    const date = isoDate(r[dayIdx]);
+    const product = r[productIdx] as MetaProduct;
+    return {
+      date,
+      isoWeek: getISOWeek(date),
+      product,
+      campaignType: campaignTypeOf(product),
+      adName: r[adNameIdx] ?? "",
+      audience: r[audienceIdx] ?? "",
+      spend: num(r[spendIdx]),
+      leads: num(r[leadsIdx]),
+      clicks: num(r[clicksIdx]),
+      impressions: num(r[impressionsIdx]),
+    };
+  });
 }
 
 export function aggregateMetaWeekly(rows: MetaRow[]): WeeklyMeta[] {
@@ -86,6 +94,7 @@ export function aggregateMetaWeekly(rows: MetaRow[]): WeeklyMeta[] {
       {
         isoWeek: r.isoWeek,
         product: r.product,
+        campaignType: campaignTypeOf(r.product),
         audience: [],
         spend: 0,
         leads: 0,
@@ -148,14 +157,26 @@ export function parseSNS(
 }
 
 export function parseGA4(rows: string[][]): GA4Row[] {
-  return rows.map((r) => {
-    const date = isoDate(r[GA4_COLS.date]);
+  const headers = rows[0] ?? [];
+  const idx = (name: string) => headers.indexOf(name);
+  const dateIdx = idx("Date");
+  const cleanedSourceIdx = idx("Cleaned Source");
+  const campaignIdx = idx("Campaign");
+  const landingPageIdx = idx("Landing Page");
+  const sessionsIdx = idx("Sessions");
+  const conversionsIdx = idx("Conversions");
+  const numCell = (s: string) => parseInt(String(s ?? "").replace(/,/g, "."), 10) || 0;
+
+  return rows.slice(1).map((r) => {
+    const date = isoDate(r[dateIdx]);
     return {
       date,
       isoWeek: getISOWeek(date),
-      source: r[GA4_COLS.source] ?? "",
-      sessions: num(r[GA4_COLS.sessions]),
-      conversions: num(r[GA4_COLS.conversions]),
+      source: r[cleanedSourceIdx] ?? "",
+      campaign: r[campaignIdx] ?? "",
+      landingPage: r[landingPageIdx] ?? "",
+      sessions: numCell(r[sessionsIdx]),
+      conversions: numCell(r[conversionsIdx]),
     };
   });
 }

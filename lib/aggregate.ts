@@ -169,6 +169,85 @@ export function paidCreatives(days: MetaDay[]): Creative[] {
     .sort((a, b) => b.leads - a.leads);
 }
 
+export type Campaign = "All" | "Salary Page" | "Job Page";
+
+const SALARY_PRODUCTS = ["April"];
+const JOB_PRODUCTS = ["K-Tuvi", "Job-page"];
+
+export function campaignProducts(c: Campaign): string[] {
+  if (c === "Salary Page") return SALARY_PRODUCTS;
+  if (c === "Job Page") return JOB_PRODUCTS;
+  return [...SALARY_PRODUCTS, ...JOB_PRODUCTS];
+}
+
+export function filterByCampaign(days: MetaDay[], c: Campaign): MetaDay[] {
+  if (c === "All") return days;
+  const products = campaignProducts(c);
+  return days.filter((d) => products.includes(d.product));
+}
+
+export function ga4PaidByDate(ga4: Ga4Day[]): Map<string, number> {
+  const m = new Map<string, number>();
+  for (const d of ga4) {
+    if (d.channel !== "paid") continue;
+    m.set(d.date, (m.get(d.date) ?? 0) + d.sessions);
+  }
+  return m;
+}
+
+export interface PaidCreativeRow {
+  adName: string;
+  product: string;
+  audience: string;
+  spend: number;
+  leads: number;
+  clicks: number;
+  impressions: number;
+  sessions: number;
+  cpl: number;
+  ctr: number;
+}
+
+export function creativesWithSessions(days: MetaDay[], ga4: Ga4Day[]): PaidCreativeRow[] {
+  const paidByDate = ga4PaidByDate(ga4);
+  const clicksByDate = new Map<string, number>();
+  for (const d of days) clicksByDate.set(d.date, (clicksByDate.get(d.date) ?? 0) + d.clicks);
+
+  const map = new Map<
+    string,
+    { product: string; audience: string; spend: number; leads: number; clicks: number; impressions: number; sessions: number }
+  >();
+  for (const d of days) {
+    const key = d.adName || "(unnamed)";
+    const c =
+      map.get(key) ??
+      { product: d.product, audience: d.audience, spend: 0, leads: 0, clicks: 0, impressions: 0, sessions: 0 };
+    c.spend += d.spend;
+    c.leads += d.leads;
+    c.clicks += d.clicks;
+    c.impressions += d.impressions;
+    const dayClicks = clicksByDate.get(d.date) ?? 0;
+    const daySessions = paidByDate.get(d.date) ?? 0;
+    c.sessions += dayClicks ? (d.clicks / dayClicks) * daySessions : 0;
+    map.set(key, c);
+  }
+
+  return [...map.entries()]
+    .map(([adName, c]) => ({
+      adName,
+      product: c.product,
+      audience: c.audience,
+      spend: c.spend,
+      leads: c.leads,
+      clicks: c.clicks,
+      impressions: c.impressions,
+      sessions: Math.round(c.sessions),
+      cpl: c.leads ? Math.round(c.spend / c.leads) : 0,
+      ctr: c.impressions ? c.clicks / c.impressions : 0,
+    }))
+    .sort((a, b) => b.spend - a.spend);
+}
+
 export interface TrafficWeek {
   week: string;
   total: number;

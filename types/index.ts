@@ -1,10 +1,18 @@
 export type MetaProduct = "April" | "K-Tuvi" | "Job-page";
 
+export type CampaignType = "salary" | "job";
+
+export const SALARY_PRODUCTS: MetaProduct[] = ["April"];
+export const JOB_PRODUCTS: MetaProduct[] = ["K-Tuvi", "Job-page"];
+
 export const ALLOWED_META_PRODUCTS: MetaProduct[] = [
-  "April",
-  "K-Tuvi",
-  "Job-page",
+  ...SALARY_PRODUCTS,
+  ...JOB_PRODUCTS,
 ];
+
+export function campaignTypeOf(product: MetaProduct): CampaignType {
+  return SALARY_PRODUCTS.includes(product) ? "salary" : "job";
+}
 
 export type SNSPlatform = "facebook" | "instagram" | "threads";
 
@@ -12,6 +20,7 @@ export interface MetaRow {
   date: string;
   isoWeek: number;
   product: MetaProduct;
+  campaignType: CampaignType;
   adName: string;
   audience: string;
   spend: number;
@@ -23,6 +32,7 @@ export interface MetaRow {
 export interface WeeklyMeta {
   isoWeek: number;
   product: MetaProduct;
+  campaignType: CampaignType;
   audience: string[];
   spend: number;
   leads: number;
@@ -46,6 +56,8 @@ export interface GA4Row {
   date: string;
   isoWeek: number;
   source: string;
+  campaign: string;
+  landingPage: string;
   sessions: number;
   conversions: number;
 }
