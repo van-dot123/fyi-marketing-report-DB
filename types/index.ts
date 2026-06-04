@@ -47,9 +47,11 @@ export interface SNSPost {
   date: string;
   isoWeek: number;
   pillar: string;
+  views: number;
   reach: number;
   impressions: number;
   engagement: number;
+  interactions: number;
 }
 
 export interface GA4Row {

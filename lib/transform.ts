@@ -12,12 +12,6 @@ import {
   campaignTypeOf,
 } from "@/types";
 
-const SNS_COLS = {
-  facebook: { date: 0, pillar: 1, reach: 2, impressions: 3, engagement: 4 },
-  instagram: { date: 0, pillar: 1, reach: 2, impressions: 3, engagement: 4 },
-  threads: { date: 0, pillar: 1, views: 2, impressions: 3, engagement: 4 },
-};
-
 export const PILLAR_MAP: Record<string, string> = {};
 
 function num(s: string): number {
@@ -122,37 +116,83 @@ export function aggregateMetaWeekly(rows: MetaRow[]): WeeklyMeta[] {
   }));
 }
 
+function colIndex(headers: string[], name: string): number {
+  const lc = name.trim().toLowerCase();
+  return (headers ?? []).findIndex((h) => String(h ?? "").trim().toLowerCase() === lc);
+}
+
+function colIndexAny(headers: string[], names: string[]): number {
+  for (const n of names) {
+    const i = colIndex(headers, n);
+    if (i >= 0) return i;
+  }
+  return -1;
+}
+
+// Parse a single platform sheet by header name. Interaction and reach formulas
+// differ per platform:
+//   facebook  interactions = Reactions + Comments + Shares,           reach = Reach
+//   instagram interactions = Likes + Comments + Shares,               reach = Reach
+//   threads   interactions = Comments + Reposts + Quotes + Shares,    reach = Views / 2
+function parseSnsSheet(rows: string[][], platform: SNSPlatform): SNSPost[] {
+  if (rows.length < 2) return [];
+  const headers = rows[0];
+  const dateIdx = colIndexAny(headers, ["Date posted", "Date", "Day"]);
+  const pillarIdx = colIndex(headers, "Pillar");
+  const viewsIdx = colIndex(headers, "Views");
+  const reachIdx = colIndex(headers, "Reach");
+  const impressionsIdx = colIndex(headers, "Impressions");
+  const reactionsIdx = colIndex(headers, "Reactions");
+  const likesIdx = colIndex(headers, "Likes");
+  const commentsIdx = colIndex(headers, "Comments");
+  const sharesIdx = colIndex(headers, "Shares");
+  const repostsIdx = colIndex(headers, "Reposts");
+  const quotesIdx = colIndex(headers, "Quotes");
+  const cell = (r: string[], i: number) => (i >= 0 ? num(r[i]) : 0);
+
+  return rows.slice(1).map((r) => {
+    const date = isoDate(dateIdx >= 0 ? r[dateIdx] : r[0]);
+    const views = cell(r, viewsIdx);
+    const comments = cell(r, commentsIdx);
+    const shares = cell(r, sharesIdx);
+
+    let interactions = 0;
+    let reach = 0;
+    if (platform === "facebook") {
+      interactions = cell(r, reactionsIdx) + comments + shares;
+      reach = cell(r, reachIdx);
+    } else if (platform === "instagram") {
+      interactions = cell(r, likesIdx) + comments + shares;
+      reach = cell(r, reachIdx);
+    } else {
+      // threads: estimated reach = Views / 2 (frequency assumed = 2).
+      interactions = comments + cell(r, repostsIdx) + cell(r, quotesIdx) + shares;
+      reach = views / 2;
+    }
+
+    return {
+      platform,
+      date,
+      isoWeek: getISOWeek(date),
+      pillar: pillar(pillarIdx >= 0 ? r[pillarIdx] : ""),
+      views,
+      reach,
+      impressions: cell(r, impressionsIdx),
+      engagement: interactions,
+      interactions,
+    };
+  });
+}
+
 export function parseSNS(
   fb: string[][],
   ins: string[][],
   threads: string[][]
 ): SNSPost[] {
-  const fromRows = (
-    rows: string[][],
-    platform: SNSPlatform,
-    cols: { date: number; pillar: number; impressions: number; engagement: number }
-  ): SNSPost[] =>
-    rows.map((r) => {
-      const date = isoDate(r[cols.date]);
-      return {
-        platform,
-        date,
-        isoWeek: getISOWeek(date),
-        pillar: pillar(r[cols.pillar]),
-        reach: num(
-          r[
-            platform === "threads" ? SNS_COLS.threads.views : SNS_COLS[platform].reach
-          ]
-        ),
-        impressions: num(r[cols.impressions]),
-        engagement: num(r[cols.engagement]),
-      };
-    });
-
   return [
-    ...fromRows(fb, "facebook", SNS_COLS.facebook),
-    ...fromRows(ins, "instagram", SNS_COLS.instagram),
-    ...fromRows(threads, "threads", SNS_COLS.threads),
+    ...parseSnsSheet(fb, "facebook"),
+    ...parseSnsSheet(ins, "instagram"),
+    ...parseSnsSheet(threads, "threads"),
   ];
 }
 

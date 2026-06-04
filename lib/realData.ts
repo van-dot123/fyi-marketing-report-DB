@@ -141,47 +141,80 @@ function colIndex(headers: string[], name: string): number {
   return (headers ?? []).findIndex((h) => String(h ?? "").trim().toLowerCase() === lc);
 }
 
-function mapMeta(r: string[], platform: SnsPlatform, pillarIdx: number): SnsPostRow {
-  const date = dayOf(r[0]);
-  const interactions = intNum(r[5]);
-  const comments = intNum(r[6]);
-  const shares = intNum(r[7]);
-  return {
-    platform,
-    date,
-    week: weekLabel(date),
-    pillar: (pillarIdx >= 0 ? r[pillarIdx] : "") || "Uncategorized",
-    views: intNum(r[3]),
-    reach: intNum(r[4]),
-    interactions,
-    reactions: Math.max(0, interactions - comments - shares),
-    comments,
-    shares,
-    url: r[2] ?? "#",
-  };
+function colIndexAny(headers: string[], names: string[]): number {
+  for (const n of names) {
+    const i = colIndex(headers, n);
+    if (i >= 0) return i;
+  }
+  return -1;
 }
 
-function mapThreads(r: string[], pillarIdx: number): SnsPostRow {
-  const date = dayOf(r[0]);
-  const likes = intNum(r[4]);
-  const comments = intNum(r[5]);
-  const reposts = intNum(r[6]);
-  const quotes = intNum(r[7]);
-  const shares = intNum(r[8]);
-  const views = intNum(r[3]);
-  return {
-    platform: "Threads",
-    date,
-    week: weekLabel(date),
-    pillar: (pillarIdx >= 0 ? r[pillarIdx] : "") || "Uncategorized",
-    views,
-    reach: views,
-    interactions: likes + comments + reposts + quotes + shares,
-    reactions: likes,
-    comments,
-    shares: reposts + quotes + shares,
-    url: r[2] ?? "#",
-  };
+// Build SNS post rows from a single platform sheet, reading every column by
+// header name (never by position). Interaction and reach formulas differ per
+// platform:
+//   Facebook  interactions = Reactions + Comments + Shares,  reach = Reach
+//   Instagram interactions = Likes + Comments + Shares,       reach = Reach
+//   Threads   interactions = Comments + Reposts + Quotes + Shares,
+//             reach = Views / 2  (no native reach; frequency assumed = 2)
+function snsRowsFrom(rows: string[][], platform: SnsPlatform): SnsPostRow[] {
+  if (rows.length < 2) return [];
+  const headers = rows[0];
+  const dateIdx = colIndexAny(headers, ["Date posted", "Date", "Day"]);
+  const pillarIdx = colIndex(headers, "Pillar");
+  const urlIdx = colIndexAny(headers, ["Permalink", "Post URL", "URL", "Link"]);
+  const viewsIdx = colIndex(headers, "Views");
+  const reachIdx = colIndex(headers, "Reach");
+  const reactionsIdx = colIndex(headers, "Reactions");
+  const likesIdx = colIndex(headers, "Likes");
+  const commentsIdx = colIndex(headers, "Comments");
+  const sharesIdx = colIndex(headers, "Shares");
+  const repostsIdx = colIndex(headers, "Reposts");
+  const quotesIdx = colIndex(headers, "Quotes");
+  const cell = (r: string[], i: number) => (i >= 0 ? intNum(r[i]) : 0);
+
+  return rows
+    .slice(1)
+    .map((r) => {
+      const date = dayOf(dateIdx >= 0 ? r[dateIdx] : r[0]);
+      const views = cell(r, viewsIdx);
+      const comments = cell(r, commentsIdx);
+      const shares = cell(r, sharesIdx);
+
+      let reactions = 0;
+      let interactions = 0;
+      let reach = 0;
+      if (platform === "Facebook") {
+        reactions = cell(r, reactionsIdx);
+        interactions = reactions + comments + shares;
+        reach = cell(r, reachIdx);
+      } else if (platform === "Instagram") {
+        reactions = cell(r, likesIdx);
+        interactions = reactions + comments + shares;
+        reach = cell(r, reachIdx);
+      } else {
+        // Threads: estimated reach = Views / 2 (frequency assumed = 2).
+        const reposts = cell(r, repostsIdx);
+        const quotes = cell(r, quotesIdx);
+        reactions = cell(r, likesIdx);
+        interactions = comments + reposts + quotes + shares;
+        reach = views / 2;
+      }
+
+      return {
+        platform,
+        date,
+        week: weekLabel(date),
+        pillar: (pillarIdx >= 0 ? r[pillarIdx] : "") || "Uncategorized",
+        views,
+        reach,
+        interactions,
+        reactions,
+        comments,
+        shares,
+        url: (urlIdx >= 0 ? r[urlIdx] : r[2]) ?? "#",
+      };
+    })
+    .filter((p) => p.date);
 }
 
 function lastFollower(rows: string[][]): number {
@@ -196,12 +229,11 @@ function lastFollower(rows: string[][]): number {
 }
 
 function snsPostsFrom(fb: string[][], ins: string[][], th: string[][]): SnsPostRow[] {
-  const pillar = (rows: string[][]) => colIndex(rows[0] ?? [], "Pillar");
   return [
-    ...fb.slice(1).map((r) => mapMeta(r, "Facebook", pillar(fb))),
-    ...ins.slice(1).map((r) => mapMeta(r, "Instagram", pillar(ins))),
-    ...th.slice(1).map((r) => mapThreads(r, pillar(th))),
-  ].filter((p) => p.date);
+    ...snsRowsFrom(fb, "Facebook"),
+    ...snsRowsFrom(ins, "Instagram"),
+    ...snsRowsFrom(th, "Threads"),
+  ];
 }
 
 export async function getSnsPosts(): Promise<SnsPostRow[]> {

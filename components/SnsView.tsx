@@ -311,8 +311,8 @@ export default function SnsView({ posts, followers, ga4 }: { posts: SnsPostRow[]
   };
 
   const followerTotal = tab === "All" ? followers.Facebook + followers.Instagram + followers.Threads : followers[tab] ?? 0;
-  const cards: { label: string; value: number | null; unit: Unit; prev: number | null }[] = [
-    ...metrics.map((m) => ({ label: m.label, value: m.value as number | null, unit: m.unit, prev: prevTotals ? prevTotals[m.key] : null })),
+  const cards: { label: string; value: number | null; unit: Unit; prev: number | null; note?: string }[] = [
+    ...metrics.map((m) => ({ label: m.label, value: m.value as number | null, unit: m.unit, prev: prevTotals ? prevTotals[m.key] : null, note: m.note })),
     { label: "Followers", value: followerTotal, unit: "number", prev: null },
   ];
 
@@ -438,7 +438,14 @@ export default function SnsView({ posts, followers, ga4 }: { posts: SnsPostRow[]
           <div className="grid grid-cols-3 gap-3">
             {cards.map((c) => (
               <div key={c.label} className="rounded-md bg-slate-50" style={{ padding: "9px 11px" }}>
-                <p className="text-[11px] text-slate-400">{c.label}</p>
+                <p className="text-[11px] text-slate-400">
+                  {c.label}
+                  {c.note && (
+                    <span title={c.note} className="ml-1 cursor-help text-slate-300" aria-label={c.note}>
+                      ⓘ
+                    </span>
+                  )}
+                </p>
                 <p className="mt-0.5 text-[18px] font-medium leading-tight text-slate-900">{c.value === null ? "—" : formatValue(c.value, c.unit)}</p>
                 <Wow value={c.value} previous={c.prev} />
               </div>

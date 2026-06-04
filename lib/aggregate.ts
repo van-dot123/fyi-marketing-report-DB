@@ -37,6 +37,7 @@ export interface Metric {
   value: number;
   unit: Unit;
   series: number[];
+  note?: string;
 }
 
 export function paidMetrics(days: MetaDay[]): Metric[] {
@@ -107,7 +108,8 @@ export function snsTotals(
   const views = sum(subset.map((p) => p.views));
   const interactions = sum(subset.map((p) => p.interactions));
   const reach = sum(subset.map((p) => p.reach));
-  return { views, interactions, reach, er: views ? interactions / views : 0 };
+  // ER = Total Interactions / Total Reach (rendered as a percentage).
+  return { views, interactions, reach, er: reach ? interactions / reach : 0 };
 }
 
 export function paidProducts(days: MetaDay[]): string[] {
@@ -301,6 +303,7 @@ export interface SnsWeek {
   week: string;
   views: number;
   interactions: number;
+  reach: number;
 }
 
 export function snsWeekly(posts: SnsPostRow[], tab: PlatformTab): SnsWeek[] {
@@ -311,9 +314,12 @@ export function snsWeekly(posts: SnsPostRow[], tab: PlatformTab): SnsWeek[] {
       week,
       views: sum(rs.map((p) => p.views)),
       interactions: sum(rs.map((p) => p.interactions)),
+      reach: sum(rs.map((p) => p.reach)),
     };
   });
 }
+
+const THREADS_REACH_NOTE = "Estimated reach (Views ÷ 2, frequency assumed = 2)";
 
 export function snsMetrics(posts: SnsPostRow[], tab: PlatformTab): Metric[] {
   const subset = platformPosts(posts, tab);
@@ -321,13 +327,14 @@ export function snsMetrics(posts: SnsPostRow[], tab: PlatformTab): Metric[] {
   const views = sum(subset.map((p) => p.views));
   const interactions = sum(subset.map((p) => p.interactions));
   const reach = sum(subset.map((p) => p.reach));
-  const er = views ? interactions / views : 0;
+  // ER = Total Interactions / Total Reach (rendered as a percentage).
+  const er = reach ? interactions / reach : 0;
 
   return [
     { key: "views", label: "Views", value: views, unit: "number", series: weeks.map((w) => w.views) },
     { key: "interactions", label: "Interactions", value: interactions, unit: "number", series: weeks.map((w) => w.interactions) },
-    { key: "reach", label: tab === "Threads" ? "Views (proxy)" : "Reach", value: reach, unit: "number", series: weeks.map((w) => w.views) },
-    { key: "er", label: "ER%", value: er, unit: "percent", series: weeks.map((w) => (w.views ? w.interactions / w.views : 0)) },
+    { key: "reach", label: "Reach", value: Math.round(reach), unit: "number", series: weeks.map((w) => w.reach), note: tab === "Threads" ? THREADS_REACH_NOTE : undefined },
+    { key: "er", label: "ER%", value: er, unit: "percent", series: weeks.map((w) => (w.reach ? w.interactions / w.reach : 0)) },
   ];
 }
 
