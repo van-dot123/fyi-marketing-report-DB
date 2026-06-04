@@ -272,21 +272,48 @@ export function trafficWeekly(ga4: Ga4Day[]): TrafficWeek[] {
 
 export interface FunnelWeek {
   week: string;
+  weekStart: string;
+  weekEnd: string;
   spend: number;
+  reach: number;
   impressions: number;
   clicks: number;
   sessions: number;
   conversions: number;
 }
 
+// Monday→Sunday ISO date range (YYYY-MM-DD) for the ISO week containing `date`.
+function isoWeekRange(date: string): [string, string] {
+  if (!date) return ["", ""];
+  const d = new Date(`${date}T00:00:00Z`);
+  const dow = (d.getUTCDay() + 6) % 7; // 0 = Monday
+  d.setUTCDate(d.getUTCDate() - dow);
+  const monday = new Date(d);
+  const sunday = new Date(d);
+  sunday.setUTCDate(d.getUTCDate() + 6);
+  const iso = (x: Date) => x.toISOString().slice(0, 10);
+  return [iso(monday), iso(sunday)];
+}
+
 export function funnelWeekly(meta: MetaDay[], ga4: Ga4Day[]): FunnelWeek[] {
-  const weeks = sortedWeeks([...meta, ...ga4]);
+  const all = [...meta, ...ga4];
+  const weeks = sortedWeeks(all);
+  // Earliest observed date per week → used to resolve the calendar range.
+  const repDate = new Map<string, string>();
+  for (const r of all) {
+    const cur = repDate.get(r.week);
+    if (!cur || r.date < cur) repDate.set(r.week, r.date);
+  }
   return weeks.map((week) => {
     const m = meta.filter((d) => d.week === week);
     const g = ga4.filter((d) => d.week === week);
+    const [weekStart, weekEnd] = isoWeekRange(repDate.get(week) ?? "");
     return {
       week,
+      weekStart,
+      weekEnd,
       spend: sum(m.map((r) => r.spend)),
+      reach: sum(m.map((r) => r.reach)),
       impressions: sum(m.map((r) => r.impressions)),
       clicks: sum(m.map((r) => r.clicks)),
       sessions: sum(g.map((r) => r.sessions)),
