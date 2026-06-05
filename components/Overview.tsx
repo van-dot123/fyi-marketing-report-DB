@@ -18,7 +18,7 @@ import {
 } from "recharts";
 import { AlertTriangle } from "lucide-react";
 import { useDateRange } from "@/components/DateRangePicker";
-import { supabase } from "@/lib/supabase";
+import { excludeInternal, INTERNAL_EXCLUDE_NOTE, supabase } from "@/lib/supabase";
 import { Ga4Day, MetaDay, SnsPostRow } from "@/lib/realData";
 import { PLATFORM_COLORS, filterByCampaign, inRange, metaTotals, paidCreatives, trafficTotals } from "@/lib/aggregate";
 import { formatKRW, formatNumber, formatPercent, formatPeriod } from "@/lib/format";
@@ -80,13 +80,9 @@ async function fetchDates(table: string, lo: string, hi: string): Promise<string
   const size = 1000;
   let from = 0;
   for (;;) {
-    const { data, error } = await supabase
-      .from(table)
-      .select("created_at")
-      .gte("created_at", lo)
-      .lte("created_at", hi)
-      .order("created_at", { ascending: true })
-      .range(from, from + size - 1);
+    let q: any = supabase.from(table).select("created_at").gte("created_at", lo).lte("created_at", hi);
+    q = excludeInternal(q, table);
+    const { data, error } = await q.order("created_at", { ascending: true }).range(from, from + size - 1);
     if (error) return null;
     const rows = data ?? [];
     for (const r of rows) out.push(String((r as any).created_at).slice(0, 10));
@@ -98,7 +94,9 @@ async function fetchDates(table: string, lo: string, hi: string): Promise<string
 
 async function countInRange(table: string, lo: string, hi: string): Promise<number> {
   if (!supabase) return 0;
-  const { count, error } = await supabase.from(table).select("*", { count: "exact", head: true }).gte("created_at", lo).lte("created_at", hi);
+  let q: any = supabase.from(table).select("*", { count: "exact", head: true }).gte("created_at", lo).lte("created_at", hi);
+  q = excludeInternal(q, table);
+  const { count, error } = await q;
   return error ? 0 : count ?? 0;
 }
 
@@ -372,15 +370,15 @@ export default function Overview({ meta, ga4, sns, missingKey }: { meta: MetaDay
   const prevCpSub = prevSubs ? Math.round(prevSalarySpend / prevSubs) : 0;
   const prevCpJob = prevJobs ? Math.round(prevJobSpend / prevJobs) : 0;
 
-  const metrics: { label: string; value: number | null; prev: number | null; fmt: (n: number) => string }[] = [
+  const metrics: { label: string; value: number | null; prev: number | null; fmt: (n: number) => string; note?: string }[] = [
     { label: "Total Spend ₩", value: t.spend, prev: prevT.spend, fmt: formatKRW },
     { label: "CTR%", value: t.ctr, prev: prevT.ctr, fmt: formatPercent },
     { label: "CP Sub ₩", value: cpSub, prev: prevCpSub, fmt: formatKRW },
     { label: "CP Job App ₩", value: cpJob, prev: prevCpJob, fmt: formatKRW },
     { label: "Total Sessions", value: traffic.total, prev: prevTraffic.total, fmt: formatNumber },
-    { label: "Submissions", value: submissions, prev: prevSubs, fmt: formatNumber },
-    { label: "Job Apps", value: jobApps, prev: prevJobs, fmt: formatNumber },
-    { label: "Sign-ups", value: signupCount, prev: null, fmt: formatNumber },
+    { label: "Submissions", value: submissions, prev: prevSubs, fmt: formatNumber, note: INTERNAL_EXCLUDE_NOTE },
+    { label: "Job Apps", value: jobApps, prev: prevJobs, fmt: formatNumber, note: INTERNAL_EXCLUDE_NOTE },
+    { label: "Sign-ups", value: signupCount, prev: null, fmt: formatNumber, note: INTERNAL_EXCLUDE_NOTE },
   ];
 
   const dates = useMemo(() => eachDay(start, end), [start, end]);
@@ -538,6 +536,7 @@ export default function Overview({ meta, ga4, sns, missingKey }: { meta: MetaDay
                   <p className="text-[11px] text-slate-400">{m.label}</p>
                   <p className="mt-0.5 text-[18px] font-medium leading-tight text-slate-900">{m.value === null ? "—" : m.fmt(m.value)}</p>
                   <Wow value={m.value} previous={m.prev} periodLabel={periodLabel} />
+                  {m.note && <p className="mt-0.5 text-[10px] italic text-slate-400">{m.note}</p>}
                 </div>
               ))}
             </div>
