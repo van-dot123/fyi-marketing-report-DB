@@ -283,7 +283,7 @@ export interface FunnelWeek {
 }
 
 // Monday→Sunday ISO date range (YYYY-MM-DD) for the ISO week containing `date`.
-function isoWeekRange(date: string): [string, string] {
+export function isoWeekRange(date: string): [string, string] {
   if (!date) return ["", ""];
   const d = new Date(`${date}T00:00:00Z`);
   const dow = (d.getUTCDay() + 6) % 7; // 0 = Monday
