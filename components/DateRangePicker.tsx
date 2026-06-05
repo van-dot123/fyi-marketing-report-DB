@@ -145,22 +145,37 @@ function MonthView({
   draftEnd: string;
   onPick: (iso: string) => void;
 }) {
+  // 7 columns × 36px = 252px fixed width; cells fill their grid track exactly.
+  const GRID = { gridTemplateColumns: "repeat(7, 1fr)" } as const;
   return (
-    <div className="w-64">
+    <div className="shrink-0" style={{ width: 252 }}>
       <div className="mb-2 text-center text-sm font-semibold text-slate-700">
         {monthLabel(view)}
       </div>
-      <div className="grid grid-cols-7 text-center text-xs text-slate-400">
+      <div className="grid text-center text-xs text-slate-400" style={GRID}>
         {WEEKDAYS.map((d) => (
           <div key={d} className="py-1">
             {d}
           </div>
         ))}
       </div>
-      <div className="grid grid-cols-7">
+      <div className="grid overflow-hidden" style={GRID}>
         {monthGrid(view).map((day) => {
           const iso = toISO(day);
           const inMonth = day.getMonth() === view.getMonth();
+
+          // Leading/trailing days from adjacent months: muted, not clickable.
+          if (!inMonth) {
+            return (
+              <div
+                key={iso}
+                className="flex h-9 select-none items-center justify-center text-sm text-slate-300"
+              >
+                {day.getDate()}
+              </div>
+            );
+          }
+
           const isStart = iso === draftStart;
           const isEnd = iso === draftEnd;
           const endpoint = isStart || isEnd;
@@ -172,7 +187,7 @@ function MonthView({
               key={iso}
               onClick={() => onPick(iso)}
               className={[
-                "h-9 text-sm transition-colors",
+                "h-9 w-full text-sm transition-colors",
                 between ? "bg-purple-100" : "",
                 isStart ? "rounded-l-lg" : "",
                 isEnd ? "rounded-r-lg" : "",
@@ -180,9 +195,7 @@ function MonthView({
                   ? "bg-purple-600 font-semibold text-white"
                   : between
                   ? "text-purple-900"
-                  : inMonth
-                  ? "text-slate-700 hover:bg-slate-100"
-                  : "text-slate-300 hover:bg-slate-50",
+                  : "text-slate-700 hover:bg-slate-100",
               ].join(" ")}
             >
               {day.getDate()}
@@ -269,7 +282,7 @@ export default function DateRangePicker() {
       </button>
 
       {open && (
-        <div className="absolute right-0 z-20 mt-2 flex w-[720px] flex-col rounded-xl border border-slate-200 bg-white shadow-xl">
+        <div className="absolute right-0 z-20 mt-2 flex w-max max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
           <div className="flex">
             <ul className="w-44 shrink-0 border-r border-slate-100 p-2">
               {presets.map((p) => {
@@ -296,8 +309,8 @@ export default function DateRangePicker() {
               })}
             </ul>
 
-            <div className="flex-1 p-4">
-              <div className="flex items-start gap-6">
+            <div className="p-4">
+              <div className="flex items-start gap-3">
                 <div className="flex items-center">
                   <button
                     onClick={() => setView(addMonths(view, -1))}
