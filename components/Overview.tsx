@@ -18,7 +18,7 @@ import {
 } from "recharts";
 import { AlertTriangle } from "lucide-react";
 import { useDateRange } from "@/components/DateRangePicker";
-import { excludeInternal, INTERNAL_EXCLUDE_NOTE, supabase } from "@/lib/supabase";
+import { NOTE_EXCLUDE_COMPANY, NOTE_EXCLUDE_EMAIL, runWithInternalFilter, supabase } from "@/lib/supabase";
 import { Ga4Day, MetaDay, SnsPostRow } from "@/lib/realData";
 import { PLATFORM_COLORS, filterByCampaign, inRange, metaTotals, paidCreatives, trafficTotals } from "@/lib/aggregate";
 import { formatKRW, formatNumber, formatPercent, formatPeriod } from "@/lib/format";
@@ -80,9 +80,11 @@ async function fetchDates(table: string, lo: string, hi: string): Promise<string
   const size = 1000;
   let from = 0;
   for (;;) {
-    let q: any = supabase.from(table).select("created_at").gte("created_at", lo).lte("created_at", hi);
-    q = excludeInternal(q, table);
-    const { data, error } = await q.order("created_at", { ascending: true }).range(from, from + size - 1);
+    const { data, error } = await runWithInternalFilter(table, (apply) =>
+      apply(supabase!.from(table).select("created_at").gte("created_at", lo).lte("created_at", hi))
+        .order("created_at", { ascending: true })
+        .range(from, from + size - 1)
+    );
     if (error) return null;
     const rows = data ?? [];
     for (const r of rows) out.push(String((r as any).created_at).slice(0, 10));
@@ -94,9 +96,9 @@ async function fetchDates(table: string, lo: string, hi: string): Promise<string
 
 async function countInRange(table: string, lo: string, hi: string): Promise<number> {
   if (!supabase) return 0;
-  let q: any = supabase.from(table).select("*", { count: "exact", head: true }).gte("created_at", lo).lte("created_at", hi);
-  q = excludeInternal(q, table);
-  const { count, error } = await q;
+  const { count, error } = await runWithInternalFilter(table, (apply) =>
+    apply(supabase!.from(table).select("*", { count: "exact", head: true }).gte("created_at", lo).lte("created_at", hi))
+  );
   return error ? 0 : count ?? 0;
 }
 
@@ -376,9 +378,9 @@ export default function Overview({ meta, ga4, sns, missingKey }: { meta: MetaDay
     { label: "CP Sub ₩", value: cpSub, prev: prevCpSub, fmt: formatKRW },
     { label: "CP Job App ₩", value: cpJob, prev: prevCpJob, fmt: formatKRW },
     { label: "Total Sessions", value: traffic.total, prev: prevTraffic.total, fmt: formatNumber },
-    { label: "Submissions", value: submissions, prev: prevSubs, fmt: formatNumber, note: INTERNAL_EXCLUDE_NOTE },
-    { label: "Job Apps", value: jobApps, prev: prevJobs, fmt: formatNumber, note: INTERNAL_EXCLUDE_NOTE },
-    { label: "Sign-ups", value: signupCount, prev: null, fmt: formatNumber, note: INTERNAL_EXCLUDE_NOTE },
+    { label: "Submissions", value: submissions, prev: prevSubs, fmt: formatNumber, note: NOTE_EXCLUDE_COMPANY },
+    { label: "Job Apps", value: jobApps, prev: prevJobs, fmt: formatNumber, note: NOTE_EXCLUDE_EMAIL },
+    { label: "Sign-ups", value: signupCount, prev: null, fmt: formatNumber, note: NOTE_EXCLUDE_EMAIL },
   ];
 
   const dates = useMemo(() => eachDay(start, end), [start, end]);

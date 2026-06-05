@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import EmptyState from "@/components/EmptyState";
 import { useDateRange } from "@/components/DateRangePicker";
-import { excludeInternal, supabase } from "@/lib/supabase";
+import { runWithInternalFilter, supabase } from "@/lib/supabase";
 import { Ga4Day, MetaDay } from "@/lib/realData";
 import { funnelWeekly, inRange } from "@/lib/aggregate";
 import { formatKRW, formatNumber, formatPct, formatPercent } from "@/lib/format";
@@ -35,9 +35,9 @@ function dayEndISO(iso: string): string {
 
 async function countInRange(table: string, lo: string, hi: string): Promise<number | null> {
   if (!supabase) return null;
-  let q: any = supabase.from(table).select("*", { count: "exact", head: true }).gte("created_at", lo).lte("created_at", hi);
-  q = excludeInternal(q, table);
-  const { count, error } = await q;
+  const { count, error } = await runWithInternalFilter(table, (apply) =>
+    apply(supabase!.from(table).select("*", { count: "exact", head: true }).gte("created_at", lo).lte("created_at", hi))
+  );
   if (error) {
     console.warn(`[funnel] ${table} count error: ${error.message}`);
     return null;

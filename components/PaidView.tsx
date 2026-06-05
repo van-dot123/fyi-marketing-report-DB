@@ -15,7 +15,7 @@ import {
 import { ArrowDown, ArrowUp, Plus } from "lucide-react";
 import EmptyState from "@/components/EmptyState";
 import { useDateRange } from "@/components/DateRangePicker";
-import { excludeInternal, INTERNAL_EXCLUDE_NOTE, supabase } from "@/lib/supabase";
+import { NOTE_EXCLUDE_COMPANY, NOTE_EXCLUDE_EMAIL, runWithInternalFilter, supabase } from "@/lib/supabase";
 import { Ga4Day, MetaDay } from "@/lib/realData";
 import {
   Campaign,
@@ -126,9 +126,11 @@ async function fetchRows(table: string, lo: string, hi: string, columns: string)
   const size = 1000;
   let from = 0;
   for (;;) {
-    let qb: any = supabase.from(table).select(columns).gte("created_at", lo).lte("created_at", hi);
-    qb = excludeInternal(qb, table);
-    const { data, error } = await qb.order("created_at", { ascending: true }).range(from, from + size - 1);
+    const { data, error } = await runWithInternalFilter(table, (apply) =>
+      apply(supabase!.from(table).select(columns).gte("created_at", lo).lte("created_at", hi))
+        .order("created_at", { ascending: true })
+        .range(from, from + size - 1)
+    );
     if (error) {
       console.warn(`[paid] ${table} (${columns}) fetch error: ${error.message}`);
       return null;
@@ -143,10 +145,11 @@ async function fetchRows(table: string, lo: string, hi: string, columns: string)
 
 async function countRows(table: string, lo: string, hi: string, mod?: (q: any) => any): Promise<number> {
   if (!supabase) return 0;
-  let q: any = supabase.from(table).select("*", { count: "exact", head: true }).gte("created_at", lo).lte("created_at", hi);
-  q = excludeInternal(q, table);
-  if (mod) q = mod(q);
-  const { count, error } = await q;
+  const { count, error } = await runWithInternalFilter(table, (apply) => {
+    let q: any = apply(supabase!.from(table).select("*", { count: "exact", head: true }).gte("created_at", lo).lte("created_at", hi));
+    if (mod) q = mod(q);
+    return q;
+  });
   return error ? 0 : count ?? 0;
 }
 
@@ -356,7 +359,7 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
           { label: "Spend ₩", value: salaryT.spend, kind: "krw", prev: prevSalaryT.spend },
           { label: "Reach", value: salaryT.reach, kind: "count", prev: prevSalaryT.reach },
           { label: "Sessions", value: salarySessions, kind: "count", prev: prevSalarySessions },
-          { label: "Submissions", value: paidSubmissions, kind: "count", prev: prevSubPaid, note: INTERNAL_EXCLUDE_NOTE },
+          { label: "Submissions", value: paidSubmissions, kind: "count", prev: prevSubPaid, note: NOTE_EXCLUDE_COMPANY },
           { label: "Cost/sub", value: cdiv(salaryT.spend, paidSubmissions), kind: "krw", prev: cdiv(prevSalaryT.spend, prevSubPaid) },
           { label: "CTR%", value: salaryT.ctr, kind: "pct", prev: prevSalaryT.ctr },
         ]
@@ -365,7 +368,7 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
           { label: "Spend ₩", value: jobT.spend, kind: "krw", prev: prevJobT.spend },
           { label: "Reach", value: jobT.reach, kind: "count", prev: prevJobT.reach },
           { label: "Sessions", value: jobSessions, kind: "count", prev: prevJobSessions },
-          { label: "Job Applications", value: jobAppsFiltered, kind: "count", prev: prevJobFiltered, note: INTERNAL_EXCLUDE_NOTE },
+          { label: "Job Applications", value: jobAppsFiltered, kind: "count", prev: prevJobFiltered, note: NOTE_EXCLUDE_EMAIL },
           { label: "Cost/job app", value: cdiv(jobT.spend, jobAppsFiltered), kind: "krw", prev: cdiv(prevJobT.spend, prevJobFiltered) },
           { label: "CTR%", value: jobT.ctr, kind: "pct", prev: prevJobT.ctr },
         ]
@@ -373,8 +376,8 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
           { label: "Spend ₩", value: allT.spend, kind: "krw", prev: prevAllT.spend },
           { label: "Reach", value: allT.reach, kind: "count", prev: prevAllT.reach },
           { label: "Sessions", value: allMetaSessions, kind: "count", prev: prevAllMetaSessions },
-          { label: "Submissions", value: paidSubmissions, kind: "count", prev: prevSubPaid, note: INTERNAL_EXCLUDE_NOTE },
-          { label: "Job Apps", value: jobAppsAll, kind: "count", prev: prevJobAll, note: INTERNAL_EXCLUDE_NOTE },
+          { label: "Submissions", value: paidSubmissions, kind: "count", prev: prevSubPaid, note: NOTE_EXCLUDE_COMPANY },
+          { label: "Job Apps", value: jobAppsAll, kind: "count", prev: prevJobAll, note: NOTE_EXCLUDE_EMAIL },
           { label: "Cost/sub", value: cdiv(salaryT.spend, paidSubmissions), kind: "krw", prev: cdiv(prevSalaryT.spend, prevSubPaid) },
           { label: "CTR%", value: allT.ctr, kind: "pct", prev: prevAllT.ctr },
         ];
