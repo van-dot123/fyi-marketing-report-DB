@@ -10,10 +10,11 @@ import { weekLabel } from "@/lib/normalize";
 import { formatKRW, formatNumber, formatPct, formatPercent } from "@/lib/format";
 
 // Benchmark conversion rates per stage transition (green / amber thresholds):
-//   Reach → Sessions, Sessions → Sign-ups, Sign-ups → Applies
+//   Reach → Sessions, Sessions → Submissions, Submissions → Sign-ups, Sign-ups → Applies
 const CR_BENCHMARKS = [
   { green: 0.01, amber: 0.004 },
   { green: 0.05, amber: 0.02 },
+  { green: 0.5, amber: 0.2 },
   { green: 0.3, amber: 0.1 },
 ];
 
@@ -161,6 +162,7 @@ export default function FunnelView({ meta, ga4, sns }: { meta: MetaDay[]; ga4: G
   const stages = [
     { name: "Reach", source: "Meta Ads + Organic SNS", value: reachTotal, fill: "#7c3aed" },
     { name: "Sessions", source: "GA4 (all)", value: sessions, fill: "#2563eb" },
+    { name: "Submissions", source: "submissions", value: subDates.length, fill: "#0ea5e9" },
     { name: "Sign-ups", source: "auth.users (rpc)", value: signupTotal ?? 0, fill: "#0891b2" },
     { name: "Applies", source: "job_applications", value: applyDates.length, fill: "#06b6d4" },
   ];
@@ -192,7 +194,7 @@ export default function FunnelView({ meta, ga4, sns }: { meta: MetaDay[]; ga4: G
     <>
       <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
         <h2 className="mb-1 text-lg font-semibold text-slate-900">Conversion Funnel</h2>
-        <p className="mb-5 text-sm text-slate-500">Reach → Sessions → Sign-ups → Applies</p>
+        <p className="mb-5 text-sm text-slate-500">Reach → Sessions → Submissions → Sign-ups → Applies</p>
 
         <div className="space-y-2.5">
           {stages.map((s, i) => {
