@@ -48,10 +48,18 @@ async function countInRange(table: string, lo: string, hi: string): Promise<numb
 }
 
 // Sign-ups come from auth.users via the get_signups_count() SECURITY DEFINER
-// RPC (user_profiles undercounts). Same [lo, hi] date window as other queries.
-async function fetchSignupsCount(lo: string, hi: string): Promise<number | null> {
+// RPC (user_profiles undercounts). Boundaries match the other Supabase queries:
+// full local day from 00:00:00.000 of `rangeStart` to 23:59:59.999 of `rangeEnd`.
+async function fetchSignupsCount(rangeStart: string, rangeEnd: string): Promise<number | null> {
   if (!supabase) return null;
-  const { data, error } = await supabase.rpc("get_signups_count", { start_date: lo, end_date: hi });
+  const start = new Date(`${rangeStart}T00:00:00`);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(`${rangeEnd}T00:00:00`);
+  end.setHours(23, 59, 59, 999);
+  const { data, error } = await supabase.rpc("get_signups_count", {
+    start_date: start.toISOString(),
+    end_date: end.toISOString(),
+  });
   if (error) {
     console.warn(`[funnel] get_signups_count error: ${error.message}`);
     return null;
@@ -86,7 +94,7 @@ export default function FunnelView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day
     const hi = dayEndISO(end);
     (async () => {
       const [su, ap] = await Promise.all([
-        fetchSignupsCount(lo, hi),
+        fetchSignupsCount(start, end),
         countInRange("job_applications", lo, hi),
       ]);
       if (!active) return;
