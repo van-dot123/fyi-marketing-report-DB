@@ -47,6 +47,18 @@ async function countInRange(table: string, lo: string, hi: string): Promise<numb
   return count ?? 0;
 }
 
+// Sign-ups come from auth.users via the get_signups_count() SECURITY DEFINER
+// RPC (user_profiles undercounts). Same [lo, hi] date window as other queries.
+async function fetchSignupsCount(lo: string, hi: string): Promise<number | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.rpc("get_signups_count", { start_date: lo, end_date: hi });
+  if (error) {
+    console.warn(`[funnel] get_signups_count error: ${error.message}`);
+    return null;
+  }
+  return Number(data) || 0;
+}
+
 // "2025-04-21" → "04-21"; renders a "04-21 ~ 04-27" week range.
 function fmtWeekRange(startISO: string, endISO: string): string {
   const md = (iso: string) => (iso ? iso.slice(5) : "");
@@ -74,7 +86,7 @@ export default function FunnelView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day
     const hi = dayEndISO(end);
     (async () => {
       const [su, ap] = await Promise.all([
-        countInRange("user_profiles", lo, hi),
+        fetchSignupsCount(lo, hi),
         countInRange("job_applications", lo, hi),
       ]);
       if (!active) return;
@@ -97,7 +109,7 @@ export default function FunnelView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day
   const stages = [
     { name: "Reach", source: "Meta Ads", value: reach, fill: "#7c3aed" },
     { name: "Sessions", source: "GA4", value: sessions, fill: "#2563eb" },
-    { name: "Sign-ups", source: "user_profiles", value: signups ?? 0, fill: "#0891b2" },
+    { name: "Sign-ups", source: "auth.users (rpc)", value: signups ?? 0, fill: "#0891b2" },
     { name: "Applies", source: "job_applications", value: applies ?? 0, fill: "#06b6d4" },
   ];
   const topValue = stages[0].value || 1;

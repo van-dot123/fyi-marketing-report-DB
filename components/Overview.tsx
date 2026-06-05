@@ -102,6 +102,18 @@ async function countInRange(table: string, lo: string, hi: string): Promise<numb
   return error ? 0 : count ?? 0;
 }
 
+// Sign-ups come from auth.users via the get_signups_count() SECURITY DEFINER
+// RPC (user_profiles undercounts). Same [lo, hi] date window as other queries.
+async function fetchSignupsCount(lo: string, hi: string): Promise<number | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.rpc("get_signups_count", { start_date: lo, end_date: hi });
+  if (error) {
+    console.warn(`[overview] get_signups_count error: ${error.message}`);
+    return null;
+  }
+  return Number(data) || 0;
+}
+
 function eachDay(start: string, end: string): string[] {
   const out: string[] = [];
   const [sy, sm, sd] = start.split("-").map(Number);
@@ -274,7 +286,7 @@ export default function Overview({ meta, ga4, sns, missingKey }: { meta: MetaDay
 
   const [subs, setSubs] = useState<string[]>([]);
   const [jobs, setJobs] = useState<string[]>([]);
-  const [signups, setSignups] = useState<string[] | null>(null);
+  const [signups, setSignups] = useState<number | null>(null);
   const [prevSubs, setPrevSubs] = useState(0);
   const [prevJobs, setPrevJobs] = useState(0);
   const [notes, setNotes] = useState<Note[]>([]);
@@ -292,7 +304,7 @@ export default function Overview({ meta, ga4, sns, missingKey }: { meta: MetaDay
       const [s, j, u, ps, pj] = await Promise.all([
         fetchDates("submissions", lo, hi),
         fetchDates("job_applications", lo, hi),
-        fetchDates("user_profiles", lo, hi),
+        fetchSignupsCount(lo, hi),
         countInRange("submissions", plo, phi),
         countInRange("job_applications", plo, phi),
       ]);
@@ -305,7 +317,7 @@ export default function Overview({ meta, ga4, sns, missingKey }: { meta: MetaDay
         console.log(`[overview] job_applications rows: ${j.length}`);
         setJobs(j);
       }
-      console.log(`[overview] user_profiles rows: ${u ? u.length : "error"}`);
+      console.log(`[overview] sign-ups (rpc): ${u ?? "error"}`);
       setSignups(u);
       setPrevSubs(ps);
       setPrevJobs(pj);
@@ -346,7 +358,7 @@ export default function Overview({ meta, ga4, sns, missingKey }: { meta: MetaDay
 
   const submissions = subs.length;
   const jobApps = jobs.length;
-  const signupCount = signups ? signups.length : null;
+  const signupCount = signups;
   const cpSub = submissions ? Math.round(salarySpend / submissions) : 0;
   const cpJob = jobApps ? Math.round(jobSpend / jobApps) : 0;
   const prevCpSub = prevSubs ? Math.round(prevSalarySpend / prevSubs) : 0;
@@ -370,11 +382,10 @@ export default function Overview({ meta, ga4, sns, missingKey }: { meta: MetaDay
     const sm = spendByDay(days);
     const subM = countByDay(subs);
     const jobM = countByDay(jobs);
-    const suM = signups ? countByDay(signups) : null;
     return dates
-      .map((d) => ({ ts: dayMs(d), spend: sm.get(d) ?? 0, submissions: subM.get(d) ?? 0, jobApps: jobM.get(d) ?? 0, signups: suM ? suM.get(d) ?? 0 : 0 }))
+      .map((d) => ({ ts: dayMs(d), spend: sm.get(d) ?? 0, submissions: subM.get(d) ?? 0, jobApps: jobM.get(d) ?? 0 }))
       .filter((p) => p.ts >= startMs && p.ts <= endMs);
-  }, [dates, days, subs, jobs, signups, startMs, endMs]);
+  }, [dates, days, subs, jobs, startMs, endMs]);
 
   const rangeNotes = notes.filter((n) => n.date >= start && n.date <= end);
   const sortedLogs = [...(logTab === "All" ? rangeNotes : rangeNotes.filter((n) => n.type === logTab.toLowerCase()))].sort((a, b) => b.date.localeCompare(a.date));
@@ -536,7 +547,6 @@ export default function Overview({ meta, ga4, sns, missingKey }: { meta: MetaDay
                   <Bar yAxisId="left" dataKey="spend" name="Spend" fill="#cbd5e1" radius={[3, 3, 0, 0]} barSize={12} />
                   <Line yAxisId="right" type="monotone" dataKey="submissions" name="Submissions" stroke="#7c3aed" strokeWidth={2} dot={false} />
                   <Line yAxisId="right" type="monotone" dataKey="jobApps" name="Job apps" stroke="#14b8a6" strokeWidth={2} strokeDasharray="5 4" dot={false} />
-                  {signups && <Line yAxisId="right" type="monotone" dataKey="signups" name="Sign-ups" stroke="#2563eb" strokeWidth={2} strokeDasharray="2 3" dot={false} />}
                   {rangeNotes.map((n, i) => (
                     <ReferenceLine key={`${n.date}-${i}`} yAxisId="left" x={dayMs(n.date)} stroke={TYPE_COLOR[n.type] ?? "#94a3b8"} strokeDasharray="4 4" />
                   ))}
