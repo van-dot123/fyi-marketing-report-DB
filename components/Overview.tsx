@@ -102,6 +102,19 @@ async function countInRange(table: string, lo: string, hi: string): Promise<numb
   return error ? 0 : count ?? 0;
 }
 
+// Sign-ups are counted directly from Supabase Auth (auth.users) via a
+// SECURITY DEFINER RPC that already excludes @likelion.net. Only an integer
+// count crosses the wire — no user rows are ever fetched to the client.
+async function signupsInRange(lo: string, hi: string): Promise<number | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.rpc("get_signups_count", { start_date: lo, end_date: hi });
+  if (error) {
+    console.warn("[overview] get_signups_count error", error.message);
+    return null;
+  }
+  return typeof data === "number" ? data : Number(data ?? 0);
+}
+
 function eachDay(start: string, end: string): string[] {
   const out: string[] = [];
   const [sy, sm, sd] = start.split("-").map(Number);
@@ -274,9 +287,11 @@ export default function Overview({ meta, ga4, sns, missingKey }: { meta: MetaDay
 
   const [subs, setSubs] = useState<string[]>([]);
   const [jobs, setJobs] = useState<string[]>([]);
-  const [signups, setSignups] = useState<string[] | null>(null);
+  const [signupByDay, setSignupByDay] = useState<Map<string, number> | null>(null);
+  const [signupTotal, setSignupTotal] = useState<number | null>(null);
   const [prevSubs, setPrevSubs] = useState(0);
   const [prevJobs, setPrevJobs] = useState(0);
+  const [prevSignups, setPrevSignups] = useState(0);
   const [notes, setNotes] = useState<Note[]>([]);
   const [logTab, setLogTab] = useState<string>("All");
   const [showAllLogs, setShowAllLogs] = useState(false);
@@ -288,13 +303,15 @@ export default function Overview({ meta, ga4, sns, missingKey }: { meta: MetaDay
     const hi = dayEndISO(end);
     const plo = dayStartISO(previousStart);
     const phi = dayEndISO(previousEnd);
+    const dayList = eachDay(start, end);
     (async () => {
-      const [s, j, u, ps, pj] = await Promise.all([
+      const [s, j, ps, pj, perDay, prevCount] = await Promise.all([
         fetchDates("submissions", lo, hi),
         fetchDates("job_applications", lo, hi),
-        fetchDates("user_profiles", lo, hi),
         countInRange("submissions", plo, phi),
         countInRange("job_applications", plo, phi),
+        Promise.all(dayList.map(async (d) => [d, await signupsInRange(dayStartISO(d), dayEndISO(d))] as const)),
+        signupsInRange(plo, phi),
       ]);
       if (!active) return;
       if (s) {
@@ -305,10 +322,26 @@ export default function Overview({ meta, ga4, sns, missingKey }: { meta: MetaDay
         console.log(`[overview] job_applications rows: ${j.length}`);
         setJobs(j);
       }
-      console.log(`[overview] user_profiles rows: ${u ? u.length : "error"}`);
-      setSignups(u);
       setPrevSubs(ps);
       setPrevJobs(pj);
+      const anyOk = perDay.some(([, c]) => c !== null);
+      if (anyOk) {
+        const m = new Map<string, number>();
+        let total = 0;
+        for (const [d, c] of perDay) {
+          const v = c ?? 0;
+          m.set(d, v);
+          total += v;
+        }
+        setSignupByDay(m);
+        setSignupTotal(total);
+        console.log(`[overview] signups (auth, excl. @likelion.net): ${total}`);
+      } else {
+        setSignupByDay(null);
+        setSignupTotal(null);
+        console.log("[overview] signups: error");
+      }
+      setPrevSignups(prevCount ?? 0);
     })();
     return () => {
       active = false;
@@ -346,21 +379,25 @@ export default function Overview({ meta, ga4, sns, missingKey }: { meta: MetaDay
 
   const submissions = subs.length;
   const jobApps = jobs.length;
-  const signupCount = signups ? signups.length : null;
+  const signupCount = signupTotal;
   const cpSub = submissions ? Math.round(salarySpend / submissions) : 0;
   const cpJob = jobApps ? Math.round(jobSpend / jobApps) : 0;
   const prevCpSub = prevSubs ? Math.round(prevSalarySpend / prevSubs) : 0;
   const prevCpJob = prevJobs ? Math.round(prevJobSpend / prevJobs) : 0;
+  // CP Sign-ups = total ad spend / sign-ups. Null (renders "—") when sign-ups is 0.
+  const cpSignup = signupCount && signupCount > 0 ? Math.round(t.spend / signupCount) : null;
+  const prevCpSignup = prevSignups > 0 ? Math.round(prevT.spend / prevSignups) : null;
 
-  const metrics: { label: string; value: number | null; prev: number | null; fmt: (n: number) => string }[] = [
+  const metrics: { label: string; value: number | null; prev: number | null; fmt: (n: number) => string; note?: string }[] = [
     { label: "Total Spend ₩", value: t.spend, prev: prevT.spend, fmt: formatKRW },
     { label: "CTR%", value: t.ctr, prev: prevT.ctr, fmt: formatPercent },
     { label: "CP Sub ₩", value: cpSub, prev: prevCpSub, fmt: formatKRW },
     { label: "CP Job App ₩", value: cpJob, prev: prevCpJob, fmt: formatKRW },
+    { label: "CP Sign-ups ₩", value: cpSignup, prev: prevCpSignup, fmt: formatKRW, note: "@likelion.net excluded" },
     { label: "Total Sessions", value: traffic.total, prev: prevTraffic.total, fmt: formatNumber },
     { label: "Submissions", value: submissions, prev: prevSubs, fmt: formatNumber },
     { label: "Job Apps", value: jobApps, prev: prevJobs, fmt: formatNumber },
-    { label: "Sign-ups", value: signupCount, prev: null, fmt: formatNumber },
+    { label: "Sign-ups", value: signupCount, prev: null, fmt: formatNumber, note: "@likelion.net excluded" },
   ];
 
   const dates = useMemo(() => eachDay(start, end), [start, end]);
@@ -370,11 +407,11 @@ export default function Overview({ meta, ga4, sns, missingKey }: { meta: MetaDay
     const sm = spendByDay(days);
     const subM = countByDay(subs);
     const jobM = countByDay(jobs);
-    const suM = signups ? countByDay(signups) : null;
+    const suM = signupByDay;
     return dates
       .map((d) => ({ ts: dayMs(d), spend: sm.get(d) ?? 0, submissions: subM.get(d) ?? 0, jobApps: jobM.get(d) ?? 0, signups: suM ? suM.get(d) ?? 0 : 0 }))
       .filter((p) => p.ts >= startMs && p.ts <= endMs);
-  }, [dates, days, subs, jobs, signups, startMs, endMs]);
+  }, [dates, days, subs, jobs, signupByDay, startMs, endMs]);
 
   const rangeNotes = notes.filter((n) => n.date >= start && n.date <= end);
   const sortedLogs = [...(logTab === "All" ? rangeNotes : rangeNotes.filter((n) => n.type === logTab.toLowerCase()))].sort((a, b) => b.date.localeCompare(a.date));
@@ -519,6 +556,7 @@ export default function Overview({ meta, ga4, sns, missingKey }: { meta: MetaDay
                   <p className="text-[11px] text-slate-400">{m.label}</p>
                   <p className="mt-0.5 text-[18px] font-medium leading-tight text-slate-900">{m.value === null ? "—" : m.fmt(m.value)}</p>
                   <Wow value={m.value} previous={m.prev} periodLabel={periodLabel} />
+                  {m.note && <p className="mt-0.5 text-[9px] text-slate-400">{m.note}</p>}
                 </div>
               ))}
             </div>
@@ -536,7 +574,7 @@ export default function Overview({ meta, ga4, sns, missingKey }: { meta: MetaDay
                   <Bar yAxisId="left" dataKey="spend" name="Spend" fill="#cbd5e1" radius={[3, 3, 0, 0]} barSize={12} />
                   <Line yAxisId="right" type="monotone" dataKey="submissions" name="Submissions" stroke="#7c3aed" strokeWidth={2} dot={false} />
                   <Line yAxisId="right" type="monotone" dataKey="jobApps" name="Job apps" stroke="#14b8a6" strokeWidth={2} strokeDasharray="5 4" dot={false} />
-                  {signups && <Line yAxisId="right" type="monotone" dataKey="signups" name="Sign-ups" stroke="#2563eb" strokeWidth={2} strokeDasharray="2 3" dot={false} />}
+                  {signupByDay && <Line yAxisId="right" type="monotone" dataKey="signups" name="Sign-ups" stroke="#2563eb" strokeWidth={2} strokeDasharray="2 3" dot={false} />}
                   {rangeNotes.map((n, i) => (
                     <ReferenceLine key={`${n.date}-${i}`} yAxisId="left" x={dayMs(n.date)} stroke={TYPE_COLOR[n.type] ?? "#94a3b8"} strokeDasharray="4 4" />
                   ))}
