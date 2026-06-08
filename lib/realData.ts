@@ -44,16 +44,30 @@ export async function getMetaDays(): Promise<MetaDay[]> {
   const impressionsIdx = idx("Impressions");
   const adNameIdx = idx("Ad Name");
   const audienceIdx = idx("Audience");
+  const campaignIdx = idx("Campaign Name");
+
+  const productFromCampaign = (campaign: string): string => {
+    if (campaign.includes("April")) return "April";
+    if (campaign.includes("Job-page")) return "Job-page";
+    if (campaign.includes("K-Tuvi")) return "K-Tuvi";
+    return "";
+  };
 
   const result = rows
     .slice(1)
-    .filter((r) => productIdx < 0 || META_PRODUCTS.includes(r[productIdx]))
+    .filter((r) => {
+      const campaign = String(r[campaignIdx] ?? "");
+      const product = r[productIdx];
+      return campaign.includes("FYI") || (productIdx >= 0 && META_PRODUCTS.includes(product));
+    })
     .map((r) => {
       const date = dayOf(r[dayIdx]);
+      const campaign = String(r[campaignIdx] ?? "");
+      const product = (r[productIdx] ?? "") || productFromCampaign(campaign);
       return {
         date,
         week: weekLabel(date),
-        product: r[productIdx] ?? "",
+        product,
         adName: r[adNameIdx] ?? "",
         audience: r[audienceIdx] ?? "",
         spend: parseMetaNum(r[spendIdx]),
