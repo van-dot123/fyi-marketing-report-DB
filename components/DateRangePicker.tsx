@@ -105,7 +105,33 @@ interface Preset {
   label: string;
   start?: string;
   end?: string;
+  sub?: string;
   custom?: boolean;
+}
+
+// "Fri 22 May" — weekday + day + month.
+function fmtReportDay(s: string): string {
+  const d = fromISO(s);
+  const wd = d.toLocaleDateString("en-GB", { weekday: "short" });
+  const mon = d.toLocaleDateString("en-GB", { month: "short" });
+  return `${wd} ${d.getDate()} ${mon}`;
+}
+
+// "28 Apr" — day + month.
+function fmtShortDay(s: string): string {
+  const d = fromISO(s);
+  return `${d.getDate()} ${d.toLocaleDateString("en-GB", { month: "short" })}`;
+}
+
+// Report week = Friday → Thursday, the most recent completed period ending
+// yesterday. offset 0 = this report week, 1 = last report week, etc.
+function getReportWeek(offset = 0): { start: string; end: string } {
+  const today = fromISO(TODAY);
+  const day = today.getDay(); // 0=Sun … 5=Fri … 6=Sat
+  const daysSinceFriday = (day + 2) % 7; // Fri=0, Sat=1 … Thu=6
+  const end = addDays(today, -daysSinceFriday - 1 - offset * 7); // a Thursday
+  const start = addDays(end, -6); // the preceding Friday
+  return { start: toISO(start), end: toISO(end) };
 }
 
 function buildPresets(): Preset[] {
@@ -114,14 +140,21 @@ function buildPresets(): Preset[] {
   const monthStart = startOfMonth(today);
   const lastMonthStart = addMonths(monthStart, -1);
 
+  const thisReport = getReportWeek(0);
+  const lastReport = getReportWeek(1);
+  const reportSub = (r: { start: string; end: string }) => `${fmtReportDay(r.start)} – ${fmtReportDay(r.end)}`;
+  const shortSub = (start: string, end: string) => `${fmtShortDay(start)} – ${fmtShortDay(end)}`;
+
   return [
     { label: "Yesterday", start: toISO(yesterday), end: toISO(yesterday) },
     { label: "Last 7 days", start: toISO(addDays(yesterday, -6)), end: toISO(yesterday) },
     { label: "Last 28 days", start: toISO(addDays(yesterday, -27)), end: toISO(yesterday) },
     { label: "This month", start: toISO(monthStart), end: toISO(addDays(addMonths(monthStart, 1), -1)) },
     { label: "Last month", start: toISO(lastMonthStart), end: toISO(addDays(monthStart, -1)) },
-    { label: "W18-19", start: "2026-05-01", end: "2026-05-10" },
-    { label: "W20-22", start: "2026-05-11", end: "2026-05-31" },
+    { label: "This report week", start: thisReport.start, end: thisReport.end, sub: reportSub(thisReport) },
+    { label: "Last report week", start: lastReport.start, end: lastReport.end, sub: reportSub(lastReport) },
+    { label: "W18-19", start: "2026-04-28", end: "2026-05-11", sub: shortSub("2026-04-28", "2026-05-11") },
+    { label: "W20-22", start: "2026-05-12", end: "2026-06-01", sub: shortSub("2026-05-12", "2026-06-01") },
     { label: "Custom", custom: true },
   ];
 }
@@ -284,7 +317,7 @@ export default function DateRangePicker() {
       {open && (
         <div className="absolute right-0 z-20 mt-2 flex w-max max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
           <div className="flex">
-            <ul className="w-44 shrink-0 border-r border-slate-100 p-2">
+            <ul className="w-52 shrink-0 border-r border-slate-100 p-2">
               {presets.map((p) => {
                 const isActive = p.custom
                   ? activePreset === "Custom"
@@ -302,7 +335,12 @@ export default function DateRangePicker() {
                         p.custom ? "cursor-default" : "",
                       ].join(" ")}
                     >
-                      {p.label}
+                      <span className="block">{p.label}</span>
+                      {p.sub && (
+                        <span className={["mt-0.5 block text-[11px] font-normal", isActive ? "text-purple-500" : "text-slate-400"].join(" ")}>
+                          {p.sub}
+                        </span>
+                      )}
                     </button>
                   </li>
                 );
