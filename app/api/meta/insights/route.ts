@@ -46,27 +46,21 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "META_AD_ACCOUNT_ID or META_ACCESS_TOKEN not configured" }, { status: 500 });
   }
 
-  const params = new URLSearchParams({
-    fields: [
-      "ad_id",
-      "ad_name",
-      "adset_name",
-      "campaign_name",
-      "spend",
-      "impressions",
-      "clicks",
-      "ctr",
-      "actions",
-      "cost_per_action_type",
-    ].join(","),
-    level: "ad",
-    time_increment: "1",
-    time_range: JSON.stringify({ since: from, until: to }),
-    access_token: ACCESS_TOKEN,
-    limit: "500",
-  });
+  const FIELDS =
+    "ad_id,ad_name,adset_name,campaign_name,spend,impressions,clicks,ctr,actions,cost_per_action_type";
 
-  const baseUrl = `https://graph.facebook.com/v19.0/act_${ACCOUNT_ID}/insights?${params}`;
+  // Build the query string manually so time_range JSON is NOT double-encoded
+  // by URLSearchParams. Meta requires it as a literal JSON value in the URL.
+  const qs = [
+    `fields=${encodeURIComponent(FIELDS)}`,
+    `level=ad`,
+    `time_increment=1`,
+    `time_range=${encodeURIComponent(JSON.stringify({ since: from, until: to }))}`,
+    `limit=500`,
+    `access_token=${encodeURIComponent(ACCESS_TOKEN)}`,
+  ].join("&");
+
+  const baseUrl = `https://graph.facebook.com/v19.0/act_${ACCOUNT_ID}/insights?${qs}`;
   const rows: any[] = [];
   let nextUrl: string | null = baseUrl;
 
@@ -74,6 +68,7 @@ export async function GET(req: NextRequest) {
     const res: Response = await fetch(nextUrl, { cache: "no-store" });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
+      console.error("[meta/insights] API error:", JSON.stringify(err));
       return NextResponse.json({ error: err }, { status: res.status });
     }
     const json = await res.json();
