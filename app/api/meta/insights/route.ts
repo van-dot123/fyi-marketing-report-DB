@@ -63,15 +63,41 @@ export async function GET(req: NextRequest) {
   const baseUrl = `https://graph.facebook.com/v19.0/${ACCOUNT_ID}/insights?${qs}`;
   const rows: any[] = [];
   let nextUrl: string | null = baseUrl;
+  let page = 0;
+  const MAX_PAGES = 20;
 
   while (nextUrl) {
-    const res: Response = await fetch(nextUrl, { cache: "no-store" });
+    if (page >= MAX_PAGES) {
+      console.warn(`[meta/insights] reached ${MAX_PAGES} page limit, stopping pagination`);
+      break;
+    }
+    page++;
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10_000);
+    let res: Response;
+    try {
+      res = await fetch(nextUrl, { cache: "no-store", signal: controller.signal });
+    } catch (err: any) {
+      console.error("[meta/insights] fetch error:", err?.message ?? err);
+      return NextResponse.json({ error: err?.message ?? "fetch failed" }, { status: 500 });
+    } finally {
+      clearTimeout(timeout);
+    }
+
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       console.error("[meta/insights] API error:", JSON.stringify(err));
       return NextResponse.json({ error: err }, { status: res.status });
     }
+
     const json = await res.json();
+
+    if (json.error) {
+      console.error("[meta/insights] API returned error in body:", JSON.stringify(json.error));
+      return NextResponse.json({ error: json.error }, { status: 400 });
+    }
+
     if (Array.isArray(json.data)) rows.push(...json.data);
     nextUrl = json.paging?.next ?? null;
   }
