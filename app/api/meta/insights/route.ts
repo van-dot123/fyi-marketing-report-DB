@@ -60,7 +60,7 @@ export async function GET(req: NextRequest) {
     `access_token=${encodeURIComponent(ACCESS_TOKEN)}`,
   ].join("&");
 
-  const baseUrl = `https://graph.facebook.com/v19.0/act_${ACCOUNT_ID}/insights?${qs}`;
+  const baseUrl = `https://graph.facebook.com/v19.0/${ACCOUNT_ID}/insights?${qs}`;
   const rows: any[] = [];
   let nextUrl: string | null = baseUrl;
 

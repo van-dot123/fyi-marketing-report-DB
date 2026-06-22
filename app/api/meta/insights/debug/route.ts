@@ -24,7 +24,7 @@ export async function GET() {
     `access_token=${encodeURIComponent(ACCESS_TOKEN)}`,
   ].join("&");
 
-  const url = `https://graph.facebook.com/v19.0/act_${ACCOUNT_ID}/insights?${qs}`;
+  const url = `https://graph.facebook.com/v19.0/${ACCOUNT_ID}/insights?${qs}`;
 
   const res: Response = await fetch(url, { cache: "no-store" });
   const body = await res.json().catch(() => ({}));
