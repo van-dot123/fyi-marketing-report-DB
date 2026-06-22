@@ -19,7 +19,11 @@ interface InsightRow {
   ad_id: string;
   ad_name: string;
   product: string;
+  objective: string;
   audience: string;
+  age: string;
+  gender: string;
+  location: string;
   spend: number;
   impressions: number;
   clicks: number;
@@ -34,6 +38,7 @@ interface AggAd {
   ad_id: string;
   ad_name: string;
   product: string;
+  objective: string;
   audience: string;
   spend: number;
   impressions: number;
@@ -76,6 +81,7 @@ function aggregateByAd(rows: InsightRow[]): AggAd[] {
       ad_id: r.ad_id,
       ad_name: r.ad_name,
       product: r.product,
+      objective: r.objective,
       audience: r.audience,
       spend: 0,
       impressions: 0,
@@ -94,6 +100,26 @@ function aggregateByAd(rows: InsightRow[]): AggAd[] {
     ...a,
     cpl: a.leads > 0 ? a.spend / a.leads : null,
     ctr: a.impressions > 0 ? a.clicks / a.impressions : 0,
+  }));
+}
+
+function aggregateByObjective(rows: InsightRow[]) {
+  const map = new Map<string, { spend: number; leads: number; clicks: number; impressions: number }>();
+  for (const r of rows) {
+    const prev = map.get(r.objective) ?? { spend: 0, leads: 0, clicks: 0, impressions: 0 };
+    prev.spend += r.spend;
+    prev.leads += r.leads;
+    prev.clicks += r.clicks;
+    prev.impressions += r.impressions;
+    map.set(r.objective, prev);
+  }
+  return [...map.entries()].map(([objective, v]) => ({
+    objective,
+    spend: v.spend,
+    leads: v.leads,
+    clicks: v.clicks,
+    cpl: v.leads > 0 ? v.spend / v.leads : null,
+    cpc: v.clicks > 0 ? v.spend / v.clicks : null,
   }));
 }
 
@@ -145,8 +171,8 @@ const PRODUCT_COLORS: Record<string, string> = {
   Other: "#94a3b8",
 };
 
-const PRODUCTS = ["All", "April", "Job-page", "K-Tuvi"] as const;
-type ProductFilter = (typeof PRODUCTS)[number];
+// Product tabs are derived dynamically from data; only this constant for "All"
+const ALL_TAB = "All";
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -218,7 +244,7 @@ export default function MetaPaidView() {
   const { from: defaultFrom, to: defaultTo } = defaultRange();
   const [dateFrom, setDateFrom] = useState(defaultFrom);
   const [dateTo, setDateTo] = useState(defaultTo);
-  const [product, setProduct] = useState<ProductFilter>("All");
+  const [product, setProduct] = useState<string>(ALL_TAB);
 
   const [rows, setRows] = useState<InsightRow[]>([]);
   const [creatives, setCreatives] = useState<CreativeMap>({});
@@ -266,9 +292,22 @@ export default function MetaPaidView() {
       .finally(() => setCreativesLoading(false));
   }, [rows]);
 
+  // ── Dynamic product tab list ─────────────────────────────────────────────────
+  const productTabs = useMemo(() => {
+    const unique = [...new Set(rows.map((r) => r.product))].sort();
+    return [ALL_TAB, ...unique];
+  }, [rows]);
+
+  // Reset to "All" if current product tab is no longer in the data
+  useEffect(() => {
+    if (product !== ALL_TAB && !productTabs.includes(product)) {
+      setProduct(ALL_TAB);
+    }
+  }, [productTabs, product]);
+
   // ── Filter by product ────────────────────────────────────────────────────────
   const filteredRows = useMemo(
-    () => (product === "All" ? rows : rows.filter((r) => r.product === product)),
+    () => (product === ALL_TAB ? rows : rows.filter((r) => r.product === product)),
     [rows, product]
   );
 
@@ -276,6 +315,7 @@ export default function MetaPaidView() {
   const aggAds = useMemo(() => aggregateByAd(filteredRows), [filteredRows]);
   const byProduct = useMemo(() => aggregateByProduct(aggregateByAd(rows)), [rows]);
   const byAudience = useMemo(() => aggregateByAudience(aggAds), [aggAds]);
+  const byObjective = useMemo(() => aggregateByObjective(filteredRows), [filteredRows]);
 
   // ── Summary metrics ──────────────────────────────────────────────────────────
   const totalSpend = aggAds.reduce((s, a) => s + a.spend, 0);
@@ -326,7 +366,7 @@ export default function MetaPaidView() {
         </div>
 
         <div className="inline-flex gap-1 rounded-lg bg-slate-100 p-1">
-          {PRODUCTS.map((p) => (
+          {productTabs.map((p) => (
             <button
               key={p}
               onClick={() => setProduct(p)}
@@ -381,6 +421,61 @@ export default function MetaPaidView() {
           value={avgCPC > 0 ? fmtVND(avgCPC) : "—"}
         />
       </div>
+
+      {/* Section 2b — Metrics by objective */}
+      {!insightsLoading && byObjective.length > 0 && (
+        <Section label="Metrics by Objective">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {byObjective.map(({ objective, spend, leads, clicks, cpl, cpc }) => {
+              const isLead = objective.toLowerCase().includes("lead");
+              const isTraffic = objective.toLowerCase().includes("traffic");
+              const metrics: { label: string; value: string }[] = isLead
+                ? [
+                    { label: "Spend", value: fmtVND(spend) },
+                    { label: "Leads", value: fmtNum(leads) },
+                    { label: "CPL", value: cpl !== null ? fmtVND(cpl) : "—" },
+                  ]
+                : isTraffic
+                ? [
+                    { label: "Spend", value: fmtVND(spend) },
+                    { label: "Clicks", value: fmtNum(clicks) },
+                    { label: "CPC", value: cpc !== null ? fmtVND(cpc) : "—" },
+                  ]
+                : [
+                    { label: "Spend", value: fmtVND(spend) },
+                    {
+                      label: "Results",
+                      value: fmtNum(leads > 0 ? leads : clicks),
+                    },
+                  ];
+
+              return (
+                <div
+                  key={objective}
+                  className="rounded-lg bg-slate-50 p-4"
+                  style={{ border: "0.5px solid #e2e8f0" }}
+                >
+                  <p className="mb-3 text-[10px] font-medium uppercase tracking-[0.06em] text-slate-500">
+                    {objective}
+                  </p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {metrics.map((m) => (
+                      <div key={m.label}>
+                        <p className="text-[9px] uppercase tracking-wide text-slate-400">
+                          {m.label}
+                        </p>
+                        <p className="mt-0.5 text-[13px] font-medium text-slate-800">
+                          {m.value}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Section>
+      )}
 
       {/* Section 3 — Charts */}
       <div className="grid grid-cols-2 gap-4">
