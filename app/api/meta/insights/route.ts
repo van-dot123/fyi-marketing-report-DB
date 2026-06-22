@@ -71,7 +71,7 @@ export async function GET(req: NextRequest) {
   let nextUrl: string | null = baseUrl;
 
   while (nextUrl) {
-    const res = await fetch(nextUrl, { cache: "no-store" });
+    const res: Response = await fetch(nextUrl, { cache: "no-store" });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       return NextResponse.json({ error: err }, { status: res.status });
