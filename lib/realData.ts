@@ -19,24 +19,26 @@ export interface MetaDay {
   leads: number;
   clicks: number;
   impressions: number;
+  imageUrl: string;
 }
 
 export async function getMetaDays(): Promise<MetaDay[]> {
-  const rows = await safe("meta_ad_raw_data");
+  const rows = await safe("meta_ad_raw_data_v2");
   return rows
-    .filter((r) => String(r[0] ?? "").toUpperCase().includes("FYI"))
+    .filter((r) => String(r[3] ?? "").toUpperCase().includes("FYI"))
     .map((r) => {
-      const date = dayOf(r[3]);
+      const date = dayOf(r[0]);
       return {
         date,
         week: weekLabel(date),
-        product: r[18] ?? "",
+        product: r[5] ?? "",
         adName: r[2] ?? "",
-        audience: r[22] ?? "",
-        spend: parseMetaNum(r[9]),
-        leads: parseMetaNum(r[14]),
-        clicks: parseMetaNum(r[11]),
-        impressions: parseMetaNum(r[5]),
+        audience: r[9] ?? "",
+        spend: parseMetaNum(r[13]),
+        leads: parseMetaNum(r[17]),
+        clicks: parseMetaNum(r[15]),
+        impressions: parseMetaNum(r[14]),
+        imageUrl: r[20] ?? "",
       };
     })
     .filter((d) => d.date);
