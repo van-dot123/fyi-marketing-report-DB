@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import EmptyState from "@/components/EmptyState";
 import { useDateRange } from "@/components/DateRangePicker";
 import { Ga4Day, MetaDay } from "@/lib/realData";
@@ -170,6 +170,8 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
   };
   const [draftText, setDraftText] = useState("");
   const [draftDate, setDraftDate] = useState("");
+  const trendRef = useRef<SVGSVGElement>(null);
+  const [hover, setHover] = useState<number | null>(null);
 
   useEffect(() => {
     try {
@@ -325,7 +327,21 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
           </div>
 
           <div style={{ position: "relative" }}>
-            <svg viewBox="0 0 940 264" style={{ width: "100%", height: "auto", overflow: "visible" }}>
+            <svg
+              ref={trendRef}
+              viewBox="0 0 940 264"
+              style={{ width: "100%", height: "auto", overflow: "visible" }}
+              onMouseMove={(e) => {
+                const svg = trendRef.current;
+                const n = vm.trend.days.length;
+                if (!svg || n === 0) return;
+                const rect = svg.getBoundingClientRect();
+                const vbX = ((e.clientX - rect.left) / rect.width) * 940;
+                const idx = n <= 1 ? 0 : Math.max(0, Math.min(n - 1, Math.round(((vbX - 62) / (878 - 62)) * (n - 1))));
+                setHover(idx);
+              }}
+              onMouseLeave={() => setHover(null)}
+            >
               <defs>
                 <linearGradient id="costGrad" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor="#2563EB" stopOpacity="0.16" />
@@ -359,7 +375,48 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
                   <text x={t.x} y="226" textAnchor="middle" style={{ fontSize: 9.5, fill: "#94A3B8", fontWeight: 600 }}>{t.label}</text>
                 </g>
               ))}
+              {hover !== null && vm.trend.days[hover] !== undefined && (
+                <g>
+                  <line x1={vm.trend.xs[hover]} y1="44" x2={vm.trend.xs[hover]} y2="208" stroke="#94A3B8" strokeWidth="1" strokeDasharray="2,3" opacity="0.6" />
+                  <circle cx={vm.trend.xs[hover]} cy={208 - (208 - 44) * (vm.trend.costVals[hover] / vm.trend.costMax)} r="4" fill="#2563EB" stroke="#fff" strokeWidth="1.5" />
+                  {vm.trend.series.map((s, i) => (
+                    <circle key={i} cx={vm.trend.xs[hover]} cy={208 - (208 - 44) * (s.vals[hover] / s.max)} r="4" fill={s.color} stroke="#fff" strokeWidth="1.5" />
+                  ))}
+                </g>
+              )}
             </svg>
+            {hover !== null && vm.trend.days[hover] !== undefined && (
+              <div
+                style={{
+                  position: "absolute",
+                  left: `${(vm.trend.xs[hover] / 940) * 100}%`,
+                  top: 6,
+                  transform: (vm.trend.xs[hover] / 940) * 100 < 50 ? "translateX(14px)" : "translateX(calc(-100% - 14px))",
+                  background: "#fff",
+                  border: "1px solid rgba(0,0,0,0.08)",
+                  borderRadius: 10,
+                  boxShadow: "0 8px 24px rgba(15,23,42,0.14)",
+                  padding: "9px 12px",
+                  pointerEvents: "none",
+                  zIndex: 5,
+                  minWidth: 118,
+                }}
+              >
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#0F172A", marginBottom: 6 }}>{fmtDay(vm.trend.days[hover])}</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 14, fontSize: 11 }}>
+                    <span style={{ display: "flex", alignItems: "center", gap: 6, color: "#64748B" }}><span style={{ width: 8, height: 8, borderRadius: 2, background: "#2563EB" }} />Cost</span>
+                    <span style={{ fontWeight: 700, color: "#0F172A" }}>{fmt(vm.trend.costVals[hover])} ₩</span>
+                  </div>
+                  {vm.trend.series.map((s, i) => (
+                    <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 14, fontSize: 11 }}>
+                      <span style={{ display: "flex", alignItems: "center", gap: 6, color: "#64748B" }}><span style={{ width: 8, height: 0, borderTop: `2px dashed ${s.color}` }} />{s.label}</span>
+                      <span style={{ fontWeight: 700, color: s.color }}>{s.isCtr ? `${s.vals[hover].toFixed(2)}%` : fmt(s.vals[hover])}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             {vm.metricEmpty && (
               <div style={{ position: "absolute", top: "38%", left: 0, right: 0, display: "flex", justifyContent: "center" }}>
                 <div style={{ background: "#FFF7ED", border: "1px solid #FED7AA", color: "#9A3412", fontSize: 11, fontWeight: 600, padding: "7px 14px", borderRadius: 8 }}>{vm.emptyMsg}</div>
@@ -705,14 +762,23 @@ function buildViewModel(meta: MetaDay[], days: MetaDay[], filter: string, metric
   // one dashed line per selected metric, each normalized to its own max
   const lines = metrics.map((m) => {
     const info = METRICS[m];
-    if (info.empty) return { key: m, empty: true, color: info.color, label: info.label, path: "", max: 1, isCtr: false };
+    if (info.empty) return { key: m, empty: true, color: info.color, label: info.label, path: "", max: 1, isCtr: false, vals: [] as number[] };
     const vals = seriesVals(m);
     const mx = niceMax(Math.max(...vals, 1));
-    return { key: m, empty: false, color: info.color, label: info.label, path: toPath(vals, (v) => Y1 - (Y1 - Y0) * (v / mx)), max: mx, isCtr: m === "ctr" };
+    return { key: m, empty: false, color: info.color, label: info.label, path: toPath(vals, (v) => Y1 - (Y1 - Y0) * (v / mx)), max: mx, isCtr: m === "ctr", vals };
   });
   const nonEmpty = lines.filter((l) => !l.empty);
   const trendLines = nonEmpty.map((l) => ({ path: l.path, color: l.color }));
   const legendLines = lines.map((l) => ({ color: l.color, label: l.label }));
+
+  // per-day data for the hover tooltip
+  const trend = {
+    days: rangeDays,
+    xs: rangeDays.map((_, i) => xAt(i)),
+    costVals: spendVals,
+    costMax: sMax,
+    series: nonEmpty.map((l) => ({ label: l.label, color: l.color, vals: l.vals, max: l.max, isCtr: l.isCtr })),
+  };
 
   const ticks = 4;
   const yLeft = Array.from({ length: ticks + 1 }, (_, i) => {
@@ -846,7 +912,7 @@ function buildViewModel(meta: MetaDay[], days: MetaDay[], filter: string, metric
   return {
     isAll, headerSub, leadDefLabel, leadDefColor, chips, kpis, products,
     curS, curE, logMin: rangeDays[0], logMax: rangeDays[rangeDays.length - 1],
-    trendSub, metricBtns, legendLines, trendLines, rightAxisColor,
+    trendSub, metricBtns, legendLines, trendLines, rightAxisColor, trend,
     spendPath, spendArea, yLeft, yRight, xTicks, metricEmpty, emptyMsg,
     optMarkers, optLegend,
     topRows, topTitle, topSub, topColHead, totSpend, totLeads, totCpl, totClicks, totCtr,
