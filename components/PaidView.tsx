@@ -276,7 +276,7 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
         </div>
 
         {/* KPI ROW */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 13 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 13 }}>
           {vm.kpis.map((k) => (
             <div key={k.label} style={{ background: k.cardBg, borderRadius: 13, padding: "17px 19px", boxShadow: "0 1px 3px rgba(0,0,0,0.05)", border: `1px solid ${k.cardBorder}`, position: "relative", overflow: "hidden" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 11 }}>
@@ -641,13 +641,17 @@ function buildViewModel(meta: MetaDay[], days: MetaDay[], filter: string, metric
     };
   });
 
-  // KPIs — all sourced from meta_ad_raw_data_v2
+  const sessionsTotal = [...sess.byDay.values()].reduce((s, v) => s + v, 0);
+
+  // KPIs — meta metrics from meta_ad_raw_data_v2; sessions from GA4 by UTM campaign
   const kpis = [
-    { label: "Impressions", value: fmt(aImp), unit: "", sub: isAll ? `Across ${products.length} campaigns` : sel, color: "#2563EB", iconBg: "#DBEAFE", iconShape: "3px", cardBg: "#fff", cardBorder: "rgba(0,0,0,0.04)", valColor: "#0F172A" },
+    { label: "Ad Spend", value: fmt(aSpend), unit: "₩", sub: isAll ? `Across ${products.length} campaigns` : sel, color: "#2563EB", iconBg: "#DBEAFE", iconShape: "3px", cardBg: "#fff", cardBorder: "rgba(0,0,0,0.04)", valColor: "#0F172A" },
+    { label: "Impressions", value: fmt(aImp), unit: "", sub: "Total impressions", color: "#0891B2", iconBg: "#CFFAFE", iconShape: "3px", cardBg: "#fff", cardBorder: "rgba(0,0,0,0.04)", valColor: "#0F172A" },
     { label: "Clicks", value: fmt(aClk), unit: "", sub: "Link clicks", color: "#7C3AED", iconBg: "#EDE9FE", iconShape: "50%", cardBg: "#fff", cardBorder: "rgba(0,0,0,0.04)", valColor: "#0F172A" },
     { label: "CTR", value: aCtr.toFixed(2), unit: "%", sub: "Click-through rate", color: "#D97706", iconBg: "#FEF3C7", iconShape: "50%", cardBg: "#fff", cardBorder: "rgba(0,0,0,0.04)", valColor: "#0F172A" },
+    { label: "Sessions", value: sess.available ? fmt(sessionsTotal) : "—", unit: "", sub: sess.available ? "Paid sessions (GA4 · UTM)" : "Not tracked (no website)", color: "#DB2777", iconBg: "#FCE7F3", iconShape: "50%", cardBg: sess.available ? "#fff" : "#FAFAF9", cardBorder: "rgba(0,0,0,0.04)", valColor: sess.available ? "#0F172A" : "#CBD5E1" },
     { label: "Leads", value: fmt(aConv), unit: "", sub: `Lead = ${leadDefLabel}`, color: "#059669", iconBg: "#DCFCE7", iconShape: "50%", cardBg: "#fff", cardBorder: "rgba(0,0,0,0.04)", valColor: "#0F172A" },
-    { label: "CP Lead", value: aCpl > 0 ? fmt(aCpl) : "—", unit: "₩", sub: "Cost per lead", color: "#DB2777", iconBg: "#FCE7F3", iconShape: "3px", cardBg: "#fff", cardBorder: "rgba(0,0,0,0.04)", valColor: "#0F172A" },
+    { label: "CP Lead", value: aCpl > 0 ? fmt(aCpl) : "—", unit: "₩", sub: "Cost per lead", color: "#475569", iconBg: "#F1F5F9", iconShape: "3px", cardBg: "#fff", cardBorder: "rgba(0,0,0,0.04)", valColor: "#0F172A" },
   ];
 
   // daily series
