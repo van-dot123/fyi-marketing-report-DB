@@ -11,9 +11,10 @@ import {
 } from "react";
 import { Calendar, ChevronLeft, ChevronRight, ChevronDown } from "lucide-react";
 
-const TODAY = "2026-06-01";
-const DEFAULT_START = "2026-05-01";
-const DEFAULT_END = "2026-05-31";
+const TODAY = "2026-06-23";
+// Default landing range = the most recent 2 weeks (14 days) of data.
+const DEFAULT_END = "2026-06-23";
+const DEFAULT_START = "2026-06-10";
 
 interface DateRangeValue {
   start: string;
