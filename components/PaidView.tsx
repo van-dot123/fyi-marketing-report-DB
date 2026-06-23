@@ -107,6 +107,17 @@ function ctrCol(v: number) {
   return v >= 1.2 ? "#059669" : v >= 0.7 ? "#D97706" : "#DC2626";
 }
 
+// 5-tier CTR pill colors used by the Audience × Creative table.
+function ctrTier(v: number) {
+  if (v >= 1.2) return { bg: "#DCFCE7", color: "#166534" };
+  if (v >= 1.0) return { bg: "#D1FAE5", color: "#15803D" };
+  if (v >= 0.8) return { bg: "#FEF3C7", color: "#854D0E" };
+  if (v >= 0.6) return { bg: "#FFEDD5", color: "#9A3412" };
+  return { bg: "#FEE2E2", color: "#991B1B" };
+}
+
+const AC_GRID = "176px 110px 84px 52px 70px 56px 56px 64px minmax(150px,1fr)";
+
 function cplStyle(c: number, avg: number) {
   if (c <= 0) return { bg: "#F1F5F9", color: "#64748B" };
   if (c < avg * 0.8) return { bg: "#DCFCE7", color: "#166534" };
@@ -172,6 +183,47 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
   const [draftDate, setDraftDate] = useState("");
   const trendRef = useRef<SVGSVGElement>(null);
   const [hover, setHover] = useState<number | null>(null);
+  const [acOpen, setAcOpen] = useState<Record<string, boolean>>({});
+  const [acNotes, setAcNotes] = useState<Record<string, string>>({});
+  const [acOff, setAcOff] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    try {
+      const savedNotes = localStorage.getItem("fyi_ac_notes_v1");
+      if (savedNotes) setAcNotes(JSON.parse(savedNotes));
+      const savedOff = localStorage.getItem("fyi_ac_off_v1");
+      if (savedOff) setAcOff(JSON.parse(savedOff));
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const toggleOff = (key: string) => {
+    setAcOff((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      try {
+        localStorage.setItem("fyi_ac_off_v1", JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  };
+
+  const setNote = (key: string, val: string) => {
+    setAcNotes((prev) => {
+      const next = { ...prev, [key]: val };
+      try {
+        localStorage.setItem("fyi_ac_notes_v1", JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  };
+
+  const toggleAcGroup = (aud: string, gi: number) =>
+    setAcOpen((prev) => ({ ...prev, [aud]: !(prev[aud] ?? gi === 0) }));
 
   useEffect(() => {
     try {
@@ -514,6 +566,141 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
           </div>
         </div>
 
+        {/* AUDIENCE / CREATIVE BREAKDOWN */}
+        <div style={card}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+            <h2 style={h2}>{vm.botTitle}</h2>
+            <span style={{ fontSize: 11, color: "#94A3B8" }}>{vm.botSub}</span>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 64px 78px 60px 56px", gap: 10, paddingBottom: 9, borderBottom: "1px solid #F1F5F9" }}>
+            <span style={th}>{vm.botColHead}</span>
+            <span style={{ ...th, textAlign: "right" }}>Leads</span>
+            <span style={{ ...th, textAlign: "center" }}>CP Lead</span>
+            <span style={{ ...th, textAlign: "right" }}>Clicks</span>
+            <span style={{ ...th, textAlign: "right" }}>CTR</span>
+          </div>
+          {vm.botRows.map((a, i) => (
+            <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 64px 78px 60px 56px", gap: 10, padding: "11px 0", borderBottom: "1px solid #F8FAFC", alignItems: "center" }}>
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 5 }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{a.name}</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{a.spend}</span>
+                  <span style={{ fontSize: 10, color: "#94A3B8" }}>{a.share}</span>
+                </div>
+                <div style={{ height: 6, background: "#F1F5F9", borderRadius: 3, overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${a.barW}%`, borderRadius: 3, background: a.color }} />
+                </div>
+              </div>
+              <div style={{ textAlign: "right", fontSize: 13, fontWeight: 600, color: "#0F172A" }}>{a.leads}</div>
+              <div style={{ textAlign: "center" }}>
+                <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 5, background: a.cplBg, color: a.cplColor, display: "inline-block" }}>{a.cpl}</span>
+              </div>
+              <div style={{ textAlign: "right", fontSize: 12, color: "#64748B" }}>{a.clicks}</div>
+              <div style={{ textAlign: "right", fontSize: 12, fontWeight: 700, color: a.ctrColor }}>{a.ctr}%</div>
+            </div>
+          ))}
+        </div>
+
+        {/* AUDIENCE × CREATIVE */}
+        <div style={card}>
+          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 16, gap: 12, flexWrap: "wrap" }}>
+            <div>
+              <h2 style={h2}>Audience × Creative</h2>
+              <p style={{ fontSize: 11, color: "#94A3B8", marginTop: 2 }}>Per-creative performance by audience · {vm.audCre.groupCount} groups · {fmt(vm.audCre.totalLeads)} total leads</p>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8" }}>CTR:</span>
+              {[{ l: "≥1.2%", v: 1.2 }, { l: "≥1.0%", v: 1.0 }, { l: "≥0.8%", v: 0.8 }, { l: "≥0.6%", v: 0.6 }, { l: "<0.6%", v: 0 }].map((c) => {
+                const t = ctrTier(c.v);
+                return <span key={c.l} style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 5, background: t.bg, color: t.color }}>{c.l}</span>;
+              })}
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: AC_GRID, gap: 8, paddingBottom: 9, borderBottom: "1px solid #F1F5F9" }}>
+            <span style={th}>Creative</span>
+            <span style={th}>Cost</span>
+            <span style={{ ...th, textAlign: "right" }}>Impression</span>
+            <span style={{ ...th, textAlign: "right" }}>Lead</span>
+            <span style={{ ...th, textAlign: "right" }}>CP Lead</span>
+            <span style={{ ...th, textAlign: "right" }}>Click</span>
+            <span style={{ ...th, textAlign: "right" }}>CPC</span>
+            <span style={{ ...th, textAlign: "center" }}>CTR</span>
+            <span style={th}>Note</span>
+          </div>
+
+          {vm.audCre.groups.map((g, gi) => {
+            const open = acOpen[g.aud] ?? gi === 0;
+            const gt = g.total;
+            const gtTier = ctrTier(gt.ctrNum);
+            return (
+              <div key={g.aud}>
+                <div onClick={() => toggleAcGroup(g.aud, gi)} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid #F8FAFC", cursor: "pointer" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                    <div style={{ width: 3, height: 15, borderRadius: 2, background: g.color }} />
+                    <span style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{g.aud}</span>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: "#64748B", background: "#F1F5F9", borderRadius: 10, padding: "1px 7px" }}>{g.count}</span>
+                  </div>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2" style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform .15s" }}><path d="M6 9l6 6 6-6" /></svg>
+                </div>
+
+                {open && (
+                  <>
+                    {g.creatives.map((c) => {
+                      const t = ctrTier(c.ctrNum);
+                      const nkey = `${g.aud}::${c.key}`;
+                      const off = !!acOff[nkey];
+                      return (
+                        <div key={c.key} style={{ display: "grid", gridTemplateColumns: AC_GRID, gap: 8, padding: "9px 0", borderBottom: "1px solid #F8FAFC", alignItems: "center", opacity: off ? 0.55 : 1 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, paddingLeft: 14 }}>
+                            <div style={{ width: 7, height: 7, borderRadius: "50%", background: c.color, flexShrink: 0 }} />
+                            <span style={{ fontSize: 12, color: "#334155", textDecoration: off ? "line-through" : "none" }}>{c.name}</span>
+                            <span onClick={() => toggleOff(nkey)} title={off ? "Turned off — click to mark active" : "Mark as turned off"} style={{ cursor: "pointer", fontSize: 9, fontWeight: 700, padding: "1px 6px", borderRadius: 4, background: off ? "#F1F5F9" : "#DCFCE7", color: off ? "#94A3B8" : "#166534", flexShrink: 0, letterSpacing: "0.04em" }}>{off ? "OFF" : "ON"}</span>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: "#0F172A", marginBottom: 4 }}>{c.cost}</div>
+                            <div style={{ height: 3, background: "#F1F5F9", borderRadius: 2, overflow: "hidden" }}><div style={{ height: "100%", width: `${c.costBarW}%`, background: c.color, borderRadius: 2 }} /></div>
+                          </div>
+                          <div style={{ textAlign: "right", fontSize: 12, color: "#64748B" }}>{c.imp}</div>
+                          <div style={{ textAlign: "right", fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{c.lead}</div>
+                          <div style={{ textAlign: "right", fontSize: 12, color: "#64748B" }}>{c.cpl}</div>
+                          <div style={{ textAlign: "right", fontSize: 12, color: "#64748B" }}>{c.click}</div>
+                          <div style={{ textAlign: "right", fontSize: 12, color: "#64748B" }}>{c.cpc}</div>
+                          <div style={{ textAlign: "center" }}><span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 5, background: t.bg, color: t.color }}>{c.ctrNum.toFixed(2)}%</span></div>
+                          <input value={acNotes[nkey] ?? ""} onChange={(e) => setNote(nkey, e.target.value)} placeholder="+ note..." style={acNoteInput} />
+                        </div>
+                      );
+                    })}
+                    <div style={{ display: "grid", gridTemplateColumns: AC_GRID, gap: 8, padding: "10px 0", alignItems: "center", background: "#F8FAFC", borderRadius: 6, borderLeft: `3px solid ${g.color}` }}>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: "#0F172A", paddingLeft: 12 }}>{g.aud} total</div>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: "#0F172A" }}>{gt.cost}</div>
+                      <div style={{ textAlign: "right", fontSize: 12, fontWeight: 800, color: "#0F172A" }}>{gt.imp}</div>
+                      <div style={{ textAlign: "right", fontSize: 13, fontWeight: 800, color: "#0F172A" }}>{gt.lead}</div>
+                      <div style={{ textAlign: "right", fontSize: 12, fontWeight: 800, color: "#0F172A" }}>{gt.cpl}</div>
+                      <div style={{ textAlign: "right", fontSize: 12, fontWeight: 800, color: "#0F172A" }}>{gt.click}</div>
+                      <div style={{ textAlign: "right", fontSize: 12, fontWeight: 800, color: "#0F172A" }}>{gt.cpc}</div>
+                      <div style={{ textAlign: "center" }}><span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 5, background: gtTier.bg, color: gtTier.color }}>{gt.ctrNum.toFixed(2)}%</span></div>
+                      <input value={acNotes[`${g.aud}::__group`] ?? ""} onChange={(e) => setNote(`${g.aud}::__group`, e.target.value)} placeholder="+ group note..." style={acNoteInput} />
+                    </div>
+                  </>
+                )}
+              </div>
+            );
+          })}
+
+          <div style={{ display: "grid", gridTemplateColumns: AC_GRID, gap: 8, padding: "12px 12px", alignItems: "center", background: "#0F172A", borderRadius: 8, marginTop: 10 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: "#fff" }}>Total</div>
+            <div style={{ fontSize: 13, fontWeight: 800, color: "#fff" }}>{vm.audCre.grand.cost}</div>
+            <div style={{ textAlign: "right", fontSize: 12, fontWeight: 700, color: "#CBD5E1" }}>{vm.audCre.grand.imp}</div>
+            <div style={{ textAlign: "right", fontSize: 13, fontWeight: 800, color: "#fff" }}>{vm.audCre.grand.lead}</div>
+            <div style={{ textAlign: "right", fontSize: 12, fontWeight: 700, color: "#CBD5E1" }}>{vm.audCre.grand.cpl}</div>
+            <div style={{ textAlign: "right", fontSize: 12, fontWeight: 700, color: "#CBD5E1" }}>{vm.audCre.grand.click}</div>
+            <div style={{ textAlign: "right", fontSize: 12, fontWeight: 700, color: "#CBD5E1" }}>{vm.audCre.grand.cpc}</div>
+            <div style={{ textAlign: "center" }}><span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 5, background: ctrTier(vm.audCre.grand.ctrNum).bg, color: ctrTier(vm.audCre.grand.ctrNum).color }}>{vm.audCre.grand.ctrNum.toFixed(2)}%</span></div>
+            <div />
+          </div>
+        </div>
+
         {/* CREATIVE PERFORMANCE */}
         <div>
           <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 13, flexWrap: "wrap", gap: 8 }}>
@@ -565,41 +752,6 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
               </div>
             ))}
           </div>
-        </div>
-
-        {/* AUDIENCE / CREATIVE BREAKDOWN */}
-        <div style={card}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-            <h2 style={h2}>{vm.botTitle}</h2>
-            <span style={{ fontSize: 11, color: "#94A3B8" }}>{vm.botSub}</span>
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 64px 78px 60px 56px", gap: 10, paddingBottom: 9, borderBottom: "1px solid #F1F5F9" }}>
-            <span style={th}>{vm.botColHead}</span>
-            <span style={{ ...th, textAlign: "right" }}>Leads</span>
-            <span style={{ ...th, textAlign: "center" }}>CP Lead</span>
-            <span style={{ ...th, textAlign: "right" }}>Clicks</span>
-            <span style={{ ...th, textAlign: "right" }}>CTR</span>
-          </div>
-          {vm.botRows.map((a, i) => (
-            <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 64px 78px 60px 56px", gap: 10, padding: "11px 0", borderBottom: "1px solid #F8FAFC", alignItems: "center" }}>
-              <div>
-                <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 5 }}>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{a.name}</span>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{a.spend}</span>
-                  <span style={{ fontSize: 10, color: "#94A3B8" }}>{a.share}</span>
-                </div>
-                <div style={{ height: 6, background: "#F1F5F9", borderRadius: 3, overflow: "hidden" }}>
-                  <div style={{ height: "100%", width: `${a.barW}%`, borderRadius: 3, background: a.color }} />
-                </div>
-              </div>
-              <div style={{ textAlign: "right", fontSize: 13, fontWeight: 600, color: "#0F172A" }}>{a.leads}</div>
-              <div style={{ textAlign: "center" }}>
-                <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 5, background: a.cplBg, color: a.cplColor, display: "inline-block" }}>{a.cpl}</span>
-              </div>
-              <div style={{ textAlign: "right", fontSize: 12, color: "#64748B" }}>{a.clicks}</div>
-              <div style={{ textAlign: "right", fontSize: 12, fontWeight: 700, color: a.ctrColor }}>{a.ctr}%</div>
-            </div>
-          ))}
         </div>
 
         {/* OPTIMIZATION LOG + INSIGHTS */}
@@ -909,6 +1061,51 @@ function buildViewModel(meta: MetaDay[], days: MetaDay[], filter: string, metric
     .map((e, i) => { const di = rangeDays.indexOf(e.date); return di >= 0 ? { n: i + 1, date: fmtDay(e.date), action: e.text } : null; })
     .filter((x): x is { n: number; date: string; action: string } => x !== null);
 
+  // Audience × Creative — group by audience, then by creative (current scope)
+  const acMap = new Map<string, Map<string, Agg>>();
+  for (const r of selRows) {
+    const aud = r.audience || "(none)";
+    let cm = acMap.get(aud);
+    if (!cm) acMap.set(aud, (cm = new Map<string, Agg>()));
+    const cre = r.adName || "(none)";
+    let o = cm.get(cre);
+    if (!o) cm.set(cre, (o = newAgg()));
+    addRow(o, r);
+  }
+  const acRow = (name: string, color: string, o: Agg, maxSpend: number) => ({
+    key: name, name, color,
+    cost: fmt(o.spend), costBarW: ((o.spend / maxSpend) * 100).toFixed(1),
+    imp: fmt(o.imp), lead: fmt(o.lead),
+    cpl: o.lead > 0 ? fmt(o.spend / o.lead) : "—",
+    click: fmt(o.clk), cpc: o.clk > 0 ? fmt(o.spend / o.clk) : "—",
+    ctrNum: o.imp > 0 ? (o.clk / o.imp) * 100 : 0,
+  });
+  const acRaw = [...acMap.entries()]
+    .map(([aud, cm]) => {
+      const cres = [...cm.entries()].map(([name, o]) => ({ name, o })).filter((c) => c.o.spend > 0 || c.o.imp > 0).sort((a, b) => b.o.spend - a.o.spend);
+      const gMax = Math.max(...cres.map((c) => c.o.spend), 1);
+      const gt = newAgg();
+      for (const c of cres) { gt.spend += c.o.spend; gt.imp += c.o.imp; gt.clk += c.o.clk; gt.lead += c.o.lead; }
+      return { aud, cres, gMax, gt };
+    })
+    .filter((g) => g.cres.length > 0)
+    .sort((a, b) => b.gt.spend - a.gt.spend);
+  const acGroups = acRaw.map((g, gi) => ({
+    aud: g.aud,
+    color: PALETTE[gi % PALETTE.length],
+    count: g.cres.length,
+    creatives: g.cres.map((c, ci) => acRow(c.name, PALETTE[ci % PALETTE.length], c.o, g.gMax)),
+    total: acRow(g.aud, PALETTE[gi % PALETTE.length], g.gt, g.gMax),
+  }));
+  const acGrandAgg = newAgg();
+  for (const g of acRaw) { acGrandAgg.spend += g.gt.spend; acGrandAgg.imp += g.gt.imp; acGrandAgg.clk += g.gt.clk; acGrandAgg.lead += g.gt.lead; }
+  const audCre = {
+    groups: acGroups,
+    grand: acRow("Total", "#0F172A", acGrandAgg, Math.max(acGrandAgg.spend, 1)),
+    groupCount: acGroups.length,
+    totalLeads: acGrandAgg.lead,
+  };
+
   return {
     isAll, headerSub, leadDefLabel, leadDefColor, chips, kpis, products,
     curS, curE, logMin: rangeDays[0], logMax: rangeDays[rangeDays.length - 1],
@@ -917,7 +1114,7 @@ function buildViewModel(meta: MetaDay[], days: MetaDay[], filter: string, metric
     optMarkers, optLegend,
     topRows, topTitle, topSub, topColHead, totSpend, totLeads, totCpl, totClicks, totCtr,
     donutSegs, donutTotal, spendLegend, mixTitle,
-    creatives, creativeSub, botRows, botTitle, botSub, botColHead, logEntries,
+    creatives, creativeSub, botRows, botTitle, botSub, botColHead, logEntries, audCre,
   };
 }
 
@@ -945,6 +1142,8 @@ const h2: React.CSSProperties = { fontSize: 15, fontWeight: 700, letterSpacing: 
 const th: React.CSSProperties = { fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "#94A3B8" };
 
 const tot: React.CSSProperties = { fontSize: 13, fontWeight: 800, color: "#0F172A" };
+
+const acNoteInput: React.CSSProperties = { width: "100%", border: "1px solid #E2E8F0", borderRadius: 7, padding: "6px 10px", fontSize: 12, color: "#334155", fontFamily: FONT, background: "#fff", outline: "none" };
 
 function FontLink() {
   return (
