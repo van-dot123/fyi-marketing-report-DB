@@ -28,30 +28,31 @@ export interface MetaDay {
   clicks: number;
   impressions: number;
   reach: number;
+  imageUrl: string;
 }
 
-const META_PRODUCTS = ["April", "Job-page", "K-Tuvi"];
-
 export async function getMetaDays(): Promise<MetaDay[]> {
-  const rows = await safeRaw("meta_ad_raw_data");
+  const rows = await safeRaw("meta_ad_raw_data_v2");
   if (rows.length === 0) return [];
   const headers = rows[0];
   const idx = (name: string) => headers.indexOf(name);
-  const dayIdx = idx("Day");
-  const spendIdx = idx("Amount Spent");
+  const dateIdx = idx("Date");
+  const spendIdx = idx("Spend");
   const productIdx = idx("Product");
-  const leadsIdx = idx("Website Lead");
-  const clicksIdx = idx("Link Clicks");
+  const leadsIdx = idx("Leads");
+  const clicksIdx = idx("Clicks");
   const impressionsIdx = idx("Impressions");
-  const reachIdx = idx("Reach");
   const adNameIdx = idx("Ad Name");
   const audienceIdx = idx("Audience");
+  const campaignIdx = idx("Campaign Name");
+  const imageUrlIdx = idx("Image URL");
 
   const result = rows
     .slice(1)
-    .filter((r) => productIdx < 0 || META_PRODUCTS.includes(r[productIdx]))
+    .filter((r) => campaignIdx < 0 || String(r[campaignIdx] ?? "").toUpperCase().includes("FYI"))
     .map((r) => {
-      const date = dayOf(r[dayIdx]);
+      const date = dayOf(r[dateIdx]);
+      const impressions = parseMetaNum(r[impressionsIdx]);
       return {
         date,
         week: weekLabel(date),
@@ -61,13 +62,14 @@ export async function getMetaDays(): Promise<MetaDay[]> {
         spend: parseMetaNum(r[spendIdx]),
         leads: parseMetaNum(r[leadsIdx]),
         clicks: parseMetaNum(r[clicksIdx]),
-        impressions: parseMetaNum(r[impressionsIdx]),
-        reach: reachIdx >= 0 ? parseMetaNum(r[reachIdx]) : 0,
+        impressions,
+        reach: impressions,
+        imageUrl: imageUrlIdx >= 0 ? r[imageUrlIdx] ?? "" : "",
       };
     })
     .filter((d) => d.date);
   const lastDate = result.reduce((m, d) => (d.date > m ? d.date : m), "");
-  console.log(`[sheets] meta_ad_raw_data: ${result.length} rows, last date ${lastDate || "n/a"}`);
+  console.log(`[sheets] meta_ad_raw_data_v2: ${result.length} rows, last date ${lastDate || "n/a"}`);
   return result;
 }
 

@@ -1,696 +1,884 @@
 "use client";
 
-import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
-import {
-  Bar,
-  CartesianGrid,
-  ComposedChart,
-  Line,
-  ReferenceLine,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
-import { ArrowDown, ArrowUp, Plus } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import EmptyState from "@/components/EmptyState";
 import { useDateRange } from "@/components/DateRangePicker";
-import { NOTE_EXCLUDE_COMPANY, NOTE_EXCLUDE_EMAIL, runWithInternalFilter, supabase } from "@/lib/supabase";
 import { Ga4Day, MetaDay } from "@/lib/realData";
-import {
-  Campaign,
-  campaignProducts,
-  creativesWithSessions,
-  filterByCampaign,
-  inRange,
-  metaTotals,
-} from "@/lib/aggregate";
-import { formatDateShort, formatKRW, formatNumber, formatPercent } from "@/lib/format";
 
-const PAID_SOURCES = ["MT", "meta"];
-const TABS: Campaign[] = ["All", "Salary Page", "Job Page"];
-const CREATIVE_TABS = ["Salary Page", "Job Page"] as const;
+/* ── tokens ─────────────────────────────────────────────────────────── */
 
-const TARGET_KPIS: { key: string; kind: "count" | "vnd"; lowerBetter: boolean }[] = [
-  { key: "Submissions", kind: "count", lowerBetter: false },
-  { key: "Job apps", kind: "count", lowerBetter: false },
-  { key: "Cost/sub", kind: "vnd", lowerBetter: true },
-  { key: "Cost/job app", kind: "vnd", lowerBetter: true },
-  { key: "Budget", kind: "vnd", lowerBetter: true },
-];
-
-const DEFAULT_TARGETS: Record<string, number> = {
-  Submissions: 500,
-  "Job apps": 200,
-  "Cost/sub": 50000,
-  "Cost/job app": 60000,
-  Budget: 30000000,
+const COLOR: Record<string, string> = {
+  April: "#2563EB",
+  "Talent-Pool": "#7C3AED",
+  "Job-page": "#0891B2",
+  Mentoring: "#DB2777",
+  "K-Tuvi": "#059669",
+  "Launch-App": "#F59E0B",
+  "May-Hackathon": "#DC2626",
+  CVReg: "#64748B",
 };
 
-type SortKey = "adName" | "audience" | "spend" | "sessions" | "leads" | "cpl" | "ctr";
+const LEADDEF: Record<string, string> = {
+  April: "Submissions",
+  "Talent-Pool": "Leads",
+  "Job-page": "Applicants",
+  Mentoring: "Form submits",
+  "K-Tuvi": "Leads",
+  "Launch-App": "App installs",
+  "May-Hackathon": "Registrations",
+  CVReg: "CV registrations",
+};
 
-interface Note {
+const PALETTE = [
+  "#2563EB", "#7C3AED", "#0891B2", "#DB2777", "#059669",
+  "#D97706", "#DC2626", "#475569", "#0EA5E9", "#9333EA", "#16A34A",
+];
+
+// Map each campaign (Product in v2) to its GA4 UTM campaign values (lowercased).
+// Campaigns absent here have no website session tracking (e.g. Launch-App).
+const SESSION_UTM: Record<string, string[]> = {
+  April: ["fyi_may_lead", "fyi-april"],
+  "Job-page": ["job-page", "200-jobs", "hot-job", "fpt-job", "co-hoi"],
+  CVReg: ["cv_register"],
+};
+
+const FONT = "'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif";
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+const SEED_LOG: LogEntry[] = [
+  { id: "s1", date: "2026-05-22", text: "Upload ask-100 campaign on Facebook" },
+  { id: "s2", date: "2026-05-19", text: "Upload Job post on Threads" },
+  { id: "s3", date: "2026-06-03", text: "Shift budget dir:fresher → dir:exp; kill fpt-ai (CPL too high)" },
+  { id: "s4", date: "2026-05-26", text: "Turn off job-offer + 3 rtg ads (low CTR / no lead)" },
+  { id: "s5", date: "2026-05-17", text: "Add rtg:engagement adset + 2 new creatives" },
+  { id: "s6", date: "2026-04-27", text: "Increase daily budget to 8K" },
+  { id: "s7", date: "2026-04-23", text: "Kill MT-traffic → shift budget to MT-lead" },
+  { id: "s8", date: "2026-04-21", text: "Turn off dir:fresher static-insight; narrow target audience" },
+];
+
+const MEMOS = [
+  { date: "23/04", content: "CPL at 334 ₩ (SD ~16%). Freshers > Experienced. static-insight best → leads driven by CURIOSITY, not job-seeking intent." },
+  { date: "28/04", content: "CPL drops to 276. Fresher leading. info-asymmetry #1, salary-nego #5. A×C: exp→static-insight; fresher→info-asymmetry." },
+  { date: "04/05", content: "CTR decrease detected → time for creative refresh." },
+  { date: "26/05", content: "dir:exp/job-global: CPL=799 (watch). dir:fresher/it-remote: CTR 1.77% but CPL 1,006 — observe next 2 days." },
+];
+
+const IMG_BGS = [
+  "linear-gradient(135deg,#2563EB,#7C3AED)", "linear-gradient(135deg,#0891B2,#2563EB)",
+  "linear-gradient(135deg,#DB2777,#7C3AED)", "linear-gradient(135deg,#059669,#0891B2)",
+  "linear-gradient(135deg,#D97706,#DC2626)", "linear-gradient(135deg,#7C3AED,#DB2777)",
+  "linear-gradient(135deg,#475569,#0F172A)", "linear-gradient(135deg,#0891B2,#059669)",
+];
+
+/* ── types ──────────────────────────────────────────────────────────── */
+
+interface LogEntry {
+  id: string;
   date: string;
-  note: string;
+  text: string;
 }
 
-/*
-CREATE TABLE optimization_log (
-  id uuid default gen_random_uuid() primary key,
-  date date not null,
-  campaign text,
-  note text,
-  author text,
-  created_at timestamptz default now()
-);
+type Metric = "leads" | "jobapp" | "clicks" | "ctr" | "sessions" | "installs";
 
-CREATE TABLE monthly_targets (
-  id uuid default gen_random_uuid() primary key,
-  month date not null,
-  kpi text not null,
-  target numeric,
-  created_at timestamptz default now()
-);
-*/
-
-function eachDay(start: string, end: string): string[] {
-  const out: string[] = [];
-  const [sy, sm, sd] = start.split("-").map(Number);
-  const [ey, em, ed] = end.split("-").map(Number);
-  const cur = new Date(sy, sm - 1, sd);
-  const last = new Date(ey, em - 1, ed);
-  while (cur <= last) {
-    const y = cur.getFullYear();
-    const m = String(cur.getMonth() + 1).padStart(2, "0");
-    const dd = String(cur.getDate()).padStart(2, "0");
-    out.push(`${y}-${m}-${dd}`);
-    cur.setDate(cur.getDate() + 1);
-  }
-  return out;
+interface Agg {
+  spend: number;
+  imp: number;
+  clk: number;
+  lead: number;
 }
 
-function countByDay(dates: string[]): Map<string, number> {
-  const m = new Map<string, number>();
-  for (const d of dates) m.set(d, (m.get(d) ?? 0) + 1);
-  return m;
-}
+/* ── helpers ────────────────────────────────────────────────────────── */
 
-function spendByDay(days: MetaDay[]): Map<string, number> {
-  const m = new Map<string, number>();
-  for (const d of days) m.set(d.date, (m.get(d.date) ?? 0) + d.spend);
-  return m;
-}
+const fmt = (n: number) => Math.round(n).toLocaleString("en-US");
+const colorOf = (p: string, i = 0) => COLOR[p] ?? PALETTE[i % PALETTE.length];
+const leadDefOf = (p: string) => LEADDEF[p] ?? "Leads";
 
-function dayMs(iso: string): number {
-  const [y, m, d] = iso.split("-").map(Number);
-  return new Date(y, m - 1, d).getTime();
-}
-
-function fmtTick(ms: number): string {
-  return new Date(ms).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
-}
-
-function dayStartISO(iso: string): string {
-  return new Date(`${iso}T00:00:00`).toISOString();
-}
-
-function dayEndISO(iso: string): string {
+function fmtDay(iso: string): string {
   const d = new Date(`${iso}T00:00:00`);
-  d.setHours(23, 59, 59, 999);
-  return d.toISOString();
+  return `${MONTHS[d.getMonth()]} ${d.getDate()}`;
 }
 
-async function fetchRows(table: string, lo: string, hi: string, columns: string): Promise<{ date: string; source: string }[] | null> {
-  if (!supabase) return null;
-  const out: { date: string; source: string }[] = [];
-  const size = 1000;
-  let from = 0;
-  for (;;) {
-    const { data, error } = await runWithInternalFilter(table, (apply) =>
-      apply(supabase!.from(table).select(columns).gte("created_at", lo).lte("created_at", hi))
-        .order("created_at", { ascending: true })
-        .range(from, from + size - 1)
-    );
-    if (error) {
-      console.warn(`[paid] ${table} (${columns}) fetch error: ${error.message}`);
-      return null;
-    }
-    const rows = data ?? [];
-    for (const r of rows) out.push({ date: String((r as any).created_at).slice(0, 10), source: String((r as any).source ?? "") });
-    if (rows.length < size) break;
-    from += size;
-  }
-  return out;
+function fmtTrig(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return `${d} ${MONTHS[m - 1]} ${y}`;
 }
 
-async function countRows(table: string, lo: string, hi: string, mod?: (q: any) => any): Promise<number> {
-  if (!supabase) return 0;
-  const { count, error } = await runWithInternalFilter(table, (apply) => {
-    let q: any = apply(supabase!.from(table).select("*", { count: "exact", head: true }).gte("created_at", lo).lte("created_at", hi));
-    if (mod) q = mod(q);
-    return q;
-  });
-  return error ? 0 : count ?? 0;
+function ctrCol(v: number) {
+  return v >= 1.2 ? "#059669" : v >= 0.7 ? "#D97706" : "#DC2626";
 }
 
-function achievement(actual: number, target: number, lowerBetter: boolean): number {
-  if (lowerBetter) return actual > 0 ? (target / actual) * 100 : 100;
-  return target > 0 ? (actual / target) * 100 : 0;
+function cplStyle(c: number, avg: number) {
+  if (c <= 0) return { bg: "#F1F5F9", color: "#64748B" };
+  if (c < avg * 0.8) return { bg: "#DCFCE7", color: "#166534" };
+  if (c < avg * 1.4) return { bg: "#FEF3C7", color: "#92400E" };
+  return { bg: "#FEE2E2", color: "#991B1B" };
 }
 
-function achClass(pct: number): string {
-  if (pct >= 100) return "bg-emerald-50 text-emerald-700";
-  if (pct >= 70) return "bg-amber-50 text-amber-700";
-  return "bg-red-50 text-red-700";
+function niceMax(v: number) {
+  if (v <= 0) return 1;
+  const p = Math.pow(10, Math.floor(Math.log10(v)));
+  const f = v / p;
+  const n = f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10;
+  return n * p;
 }
 
-function noteColor(note: string): string {
-  const t = note.toLowerCase();
-  if (t.includes("audience")) return "#7c3aed";
-  if (t.includes("creative")) return "#14b8a6";
-  return "#f59e0b";
+function newAgg(): Agg {
+  return { spend: 0, imp: 0, clk: 0, lead: 0 };
 }
 
-function markerLabel(note: string): string {
-  return note.length > 16 ? `${note.slice(0, 16)}…` : note;
+function addRow(o: Agg, r: MetaDay) {
+  o.spend += r.spend;
+  o.imp += r.impressions;
+  o.clk += r.clicks;
+  o.lead += r.leads;
 }
 
-function NoteLabel(props: any) {
-  const { viewBox, value, row, color } = props;
-  if (!viewBox) return null;
-  return (
-    <text x={viewBox.x} y={viewBox.y + 6 + (row ?? 0) * 11} textAnchor="middle" fontSize={9} fill={color}>
-      {value}
-    </text>
-  );
-}
-
-function audienceBreakdown(days: MetaDay[]) {
-  const m = new Map<string, { spend: number; leads: number }>();
-  for (const d of days) {
-    const key = d.audience || "—";
-    const a = m.get(key) ?? { spend: 0, leads: 0 };
-    a.spend += d.spend;
-    a.leads += d.leads;
-    m.set(key, a);
+function groupBy(rows: MetaDay[], key: (r: MetaDay) => string) {
+  const m = new Map<string, Agg>();
+  for (const r of rows) {
+    const k = key(r) || "(none)";
+    let o = m.get(k);
+    if (!o) m.set(k, (o = newAgg()));
+    addRow(o, r);
   }
   return [...m.entries()]
-    .map(([segment, a]) => ({ segment, spend: a.spend, cpl: a.leads ? Math.round(a.spend / a.leads) : 0 }))
-    .sort((a, b) => b.spend - a.spend)
-    .slice(0, 6);
+    .map(([name, o]) => ({ name, ...o }))
+    .filter((x) => x.spend > 0)
+    .sort((a, b) => b.spend - a.spend);
 }
 
-function Section({ label, children }: { label?: string; children: ReactNode }) {
-  return (
-    <div className="rounded-lg border-slate-200 bg-white px-4 py-3.5" style={{ borderWidth: 0.5, borderStyle: "solid" }}>
-      {label && <p className="mb-2.5 text-[10px] font-normal uppercase tracking-[0.06em] text-slate-400">{label}</p>}
-      {children}
-    </div>
-  );
-}
-
-function Wow({ value, previous }: { value: number; previous: number | null }) {
-  if (previous === null || previous === 0) return <p className="text-[10px] text-slate-300">vs prev —</p>;
-  const pct = (value - previous) / previous;
-  const up = pct >= 0;
-  return (
-    <p className={["text-[10px]", up ? "text-emerald-600" : "text-red-500"].join(" ")}>
-      {up ? "▲" : "▼"} {Math.abs(pct * 100).toFixed(0)}%
-    </p>
-  );
-}
+/* ── component ──────────────────────────────────────────────────────── */
 
 export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[] }) {
-  const { start, end, previousStart, previousEnd } = useDateRange();
-  const days = useMemo(() => inRange(meta, start, end), [meta, start, end]);
-  const ga4Days = useMemo(() => inRange(ga4, start, end), [ga4, start, end]);
-  const prevDays = useMemo(() => inRange(meta, previousStart, previousEnd), [meta, previousStart, previousEnd]);
-  const prevGa4 = useMemo(() => inRange(ga4, previousStart, previousEnd), [ga4, previousStart, previousEnd]);
-  const monthKey = `${start.slice(0, 7)}-01`;
+  const { start, end } = useDateRange();
+  const [filter, setFilter] = useState("All");
+  const [metrics, setMetrics] = useState<Metric[]>(["leads"]);
+  const [log, setLog] = useState<LogEntry[]>(SEED_LOG);
 
-  const [campaign, setCampaign] = useState<Campaign>("All");
-  const [creativeTab, setCreativeTab] = useState<(typeof CREATIVE_TABS)[number]>("Salary Page");
-  const [sortKey, setSortKey] = useState<SortKey>("spend");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  // Single campaign → default the dashed line to its lead metric (single-select).
+  // All → keep current selection (multi-select).
+  useEffect(() => {
+    if (filter !== "All") setMetrics(["leads"]);
+  }, [filter]);
 
-  const [subRows, setSubRows] = useState<{ date: string; source: string }[]>([]);
-  const [jobRows, setJobRows] = useState<{ date: string; source: string }[]>([]);
-  const [prevSubPaid, setPrevSubPaid] = useState(0);
-  const [prevJobAll, setPrevJobAll] = useState(0);
-  const [prevJobFiltered, setPrevJobFiltered] = useState(0);
-  const [dbStatus, setDbStatus] = useState<"loading" | "connecting" | "ready">("loading");
-
-  const [notes, setNotes] = useState<Note[]>([]);
-  const [noteDate, setNoteDate] = useState(start);
-  const [noteText, setNoteText] = useState("");
-  const [noteError, setNoteError] = useState<string | null>(null);
-
-  const [targets, setTargets] = useState<Record<string, number>>(DEFAULT_TARGETS);
+  const toggleMetric = (m: Metric) => {
+    if (filter === "All") {
+      setMetrics((prev) => (prev.includes(m) ? prev.filter((x) => x !== m) : [...prev, m]));
+    } else {
+      setMetrics([m]);
+    }
+  };
+  const [draftText, setDraftText] = useState("");
+  const [draftDate, setDraftDate] = useState("");
 
   useEffect(() => {
-    if (!supabase) {
-      setDbStatus("connecting");
-      return;
+    try {
+      const saved = localStorage.getItem("fyi_paid_log_v1");
+      if (saved) setLog(JSON.parse(saved));
+    } catch {
+      /* keep seed */
     }
-    let active = true;
-    setDbStatus("loading");
-    const lo = dayStartISO(start);
-    const hi = dayEndISO(end);
-    const plo = dayStartISO(previousStart);
-    const phi = dayEndISO(previousEnd);
-    (async () => {
-      const [subRaw, pSub, pJobAll, pJobFiltered] = await Promise.all([
-        fetchRows("submissions", lo, hi, "created_at, source"),
-        countRows("submissions", plo, phi, (q) => q.in("source", PAID_SOURCES)),
-        countRows("job_applications", plo, phi),
-        countRows("job_applications", plo, phi, (q) => q.or("source.eq.meta,source.is.null")),
-      ]);
-      let jobRaw = await fetchRows("job_applications", lo, hi, "created_at, source");
-      if (!jobRaw) jobRaw = await fetchRows("job_applications", lo, hi, "created_at");
-      if (!active) return;
-      if (subRaw) {
-        console.log(`[paid] submissions rows: ${subRaw.length}`);
-        setSubRows(subRaw);
-      }
-      if (jobRaw) {
-        console.log(`[paid] job_applications rows: ${jobRaw.length}`);
-        setJobRows(jobRaw);
-      }
-      setPrevSubPaid(pSub);
-      setPrevJobAll(pJobAll);
-      setPrevJobFiltered(pJobFiltered);
-      setDbStatus(subRaw || jobRaw ? "ready" : "connecting");
-    })();
-    return () => {
-      active = false;
-    };
-  }, [start, end, previousStart, previousEnd]);
-
-  const loadNotes = useCallback(() => {
-    if (!supabase) return;
-    supabase
-      .from("optimization_log")
-      .select("date, note")
-      .eq("page", "paid")
-      .order("date", { ascending: false })
-      .then(({ data, error }) => {
-        if (error) {
-          console.warn("[paid] optimization_log unavailable", error.message);
-          return;
-        }
-        console.log(`[paid] optimization_log rows: ${(data ?? []).length}`);
-        setNotes((data ?? []).map((r: any) => ({ date: String(r.date).slice(0, 10), note: r.note ?? "" })));
-      });
   }, []);
 
-  const loadTargets = useCallback(() => {
-    if (!supabase) return;
-    supabase
-      .from("monthly_targets")
-      .select("kpi, target")
-      .eq("month", monthKey)
-      .then(({ data, error }) => {
-        if (error) {
-          console.warn("[paid] monthly_targets unavailable", error.message);
-          return;
-        }
-        const next = { ...DEFAULT_TARGETS };
-        for (const r of data ?? []) if (r.kpi in next) next[r.kpi] = Number(r.target);
-        setTargets(next);
-      });
-  }, [monthKey]);
-
-  useEffect(() => {
-    loadNotes();
-  }, [loadNotes]);
-
-  useEffect(() => {
-    loadTargets();
-  }, [loadTargets]);
-
-  const allCreatives = useMemo(() => creativesWithSessions(days, ga4Days), [days, ga4Days]);
-
-  const paidSubRows = subRows.filter((r) => ["mt", "meta"].includes(r.source.toLowerCase()));
-  const paidSubmissions = paidSubRows.length;
-  const jobAppsAll = jobRows.length;
-  const jobAppsFiltered = jobRows.filter((j) => j.source.toLowerCase() === "meta" || j.source === "").length;
-
-  const metaSess = (g: Ga4Day[], lp?: string) =>
-    g.filter((d) => d.source === "meta" && (lp === undefined || d.landingPage === lp)).reduce((a, d) => a + d.sessions, 0);
-  const salarySessions = metaSess(ga4Days, "/");
-  const jobSessions = metaSess(ga4Days, "/jobs");
-  const allMetaSessions = metaSess(ga4Days);
-  const prevSalarySessions = metaSess(prevGa4, "/");
-  const prevJobSessions = metaSess(prevGa4, "/jobs");
-  const prevAllMetaSessions = metaSess(prevGa4);
-
-  const salaryT = metaTotals(filterByCampaign(days, "Salary Page"));
-  const jobT = metaTotals(filterByCampaign(days, "Job Page"));
-  const allT = metaTotals(days);
-  const prevSalaryT = metaTotals(filterByCampaign(prevDays, "Salary Page"));
-  const prevJobT = metaTotals(filterByCampaign(prevDays, "Job Page"));
-  const prevAllT = metaTotals(prevDays);
-
-  const cdiv = (a: number, b: number) => (b ? Math.round(a / b) : 0);
-
-  const cards: { label: string; value: number; kind: string; prev: number; note?: string }[] =
-    campaign === "Salary Page"
-      ? [
-          { label: "Spend ₩", value: salaryT.spend, kind: "krw", prev: prevSalaryT.spend },
-          { label: "Reach", value: salaryT.reach, kind: "count", prev: prevSalaryT.reach },
-          { label: "Sessions", value: salarySessions, kind: "count", prev: prevSalarySessions },
-          { label: "Submissions", value: paidSubmissions, kind: "count", prev: prevSubPaid, note: NOTE_EXCLUDE_COMPANY },
-          { label: "Cost/sub", value: cdiv(salaryT.spend, paidSubmissions), kind: "krw", prev: cdiv(prevSalaryT.spend, prevSubPaid) },
-          { label: "CTR%", value: salaryT.ctr, kind: "pct", prev: prevSalaryT.ctr },
-        ]
-      : campaign === "Job Page"
-      ? [
-          { label: "Spend ₩", value: jobT.spend, kind: "krw", prev: prevJobT.spend },
-          { label: "Reach", value: jobT.reach, kind: "count", prev: prevJobT.reach },
-          { label: "Sessions", value: jobSessions, kind: "count", prev: prevJobSessions },
-          { label: "Job Applications", value: jobAppsFiltered, kind: "count", prev: prevJobFiltered, note: NOTE_EXCLUDE_EMAIL },
-          { label: "Cost/job app", value: cdiv(jobT.spend, jobAppsFiltered), kind: "krw", prev: cdiv(prevJobT.spend, prevJobFiltered) },
-          { label: "CTR%", value: jobT.ctr, kind: "pct", prev: prevJobT.ctr },
-        ]
-      : [
-          { label: "Spend ₩", value: allT.spend, kind: "krw", prev: prevAllT.spend },
-          { label: "Reach", value: allT.reach, kind: "count", prev: prevAllT.reach },
-          { label: "Sessions", value: allMetaSessions, kind: "count", prev: prevAllMetaSessions },
-          { label: "Submissions", value: paidSubmissions, kind: "count", prev: prevSubPaid, note: NOTE_EXCLUDE_COMPANY },
-          { label: "Job Apps", value: jobAppsAll, kind: "count", prev: prevJobAll, note: NOTE_EXCLUDE_EMAIL },
-          { label: "Cost/sub", value: cdiv(salaryT.spend, paidSubmissions), kind: "krw", prev: cdiv(prevSalaryT.spend, prevSubPaid) },
-          { label: "CTR%", value: allT.ctr, kind: "pct", prev: prevAllT.ctr },
-        ];
-
-  const fmt = (v: number, kind: string) => (kind === "krw" ? formatKRW(v) : kind === "pct" ? (v * 100).toFixed(2) : formatNumber(v));
-
-  const actuals: Record<string, number> = {
-    Submissions: paidSubmissions,
-    "Job apps": jobAppsAll,
-    "Cost/sub": cdiv(salaryT.spend, paidSubmissions),
-    "Cost/job app": cdiv(jobT.spend, jobAppsAll),
-    Budget: allT.spend,
-  };
-
-  const dates = useMemo(() => eachDay(start, end), [start, end]);
-  const startMs = dayMs(start);
-  const endMs = dayMs(end);
-  const chartData = useMemo(() => {
-    const sm = spendByDay(filterByCampaign(days, campaign));
-    const subM = countByDay(subRows.filter((r) => ["mt", "meta"].includes(r.source.toLowerCase())).map((r) => r.date));
-    const jobM = countByDay(jobRows.map((j) => j.date));
-    return dates
-      .map((d) => ({ ts: dayMs(d), date: d, spend: sm.get(d) ?? 0, submissions: subM.get(d) ?? 0, jobApps: jobM.get(d) ?? 0 }))
-      .filter((p) => p.ts >= startMs && p.ts <= endMs);
-  }, [dates, days, campaign, subRows, jobRows, startMs, endMs]);
-
-  const rangeNotes = notes.filter((n) => n.date >= start && n.date <= end);
-  const markerRowSeen = new Map<string, number>();
-  const markers = rangeNotes.map((n) => {
-    const row = markerRowSeen.get(n.date) ?? 0;
-    markerRowSeen.set(n.date, row + 1);
-    return { date: n.date, note: n.note, row: row % 3, color: noteColor(n.note) };
-  });
-
-  const creatives = useMemo(
-    () => allCreatives.filter((c) => campaignProducts(creativeTab).includes(c.product)),
-    [allCreatives, creativeTab]
-  );
-  const sortedCreatives = useMemo(() => {
-    const arr = [...creatives];
-    arr.sort((a, b) => {
-      const av = a[sortKey];
-      const bv = b[sortKey];
-      if (typeof av === "string" && typeof bv === "string") return sortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
-      return sortDir === "asc" ? (av as number) - (bv as number) : (bv as number) - (av as number);
-    });
-    return arr.slice(0, 10);
-  }, [creatives, sortKey, sortDir]);
-
-  const toggleSort = (key: SortKey) => {
-    if (sortKey === key) setSortDir(sortDir === "asc" ? "desc" : "asc");
-    else {
-      setSortKey(key);
-      setSortDir(key === "adName" || key === "audience" ? "asc" : "desc");
+  const saveLog = (next: LogEntry[]) => {
+    setLog(next);
+    try {
+      localStorage.setItem("fyi_paid_log_v1", JSON.stringify(next));
+    } catch {
+      /* ignore */
     }
   };
 
-  const creativeColumns: { key: SortKey | "rank"; label: string; align: "left" | "right"; fmt?: (n: number) => string }[] = [
-    { key: "rank", label: "Rank", align: "left" },
-    { key: "adName", label: "Ad name", align: "left" },
-    { key: "audience", label: "Audience", align: "left" },
-    { key: "spend", label: "Spend", align: "right", fmt: formatKRW },
-    { key: "sessions", label: "Sessions", align: "right", fmt: formatNumber },
-    { key: "leads", label: creativeTab === "Job Page" ? "Job apps" : "Subs", align: "right", fmt: formatNumber },
-    { key: "cpl", label: creativeTab === "Job Page" ? "Cost/app" : "Cost/sub", align: "right", fmt: formatKRW },
-    { key: "ctr", label: "CTR", align: "right", fmt: formatPercent },
-  ];
-
-  const audience = useMemo(() => audienceBreakdown(filterByCampaign(days, campaign)), [days, campaign]);
-  const audienceMax = Math.max(1, ...audience.map((a) => a.spend));
-
-  const saveTarget = useCallback(
-    async (kpi: string, value: number) => {
-      if (!supabase) return;
-      const { data } = await supabase.from("monthly_targets").select("id").eq("month", monthKey).eq("kpi", kpi).limit(1);
-      if (data && data.length) await supabase.from("monthly_targets").update({ target: value }).eq("id", data[0].id);
-      else await supabase.from("monthly_targets").insert({ month: monthKey, kpi, target: value });
-    },
-    [monthKey]
+  const days = useMemo(
+    () => meta.filter((r) => r.date >= start && r.date <= end),
+    [meta, start, end]
   );
 
-  const addNote = async () => {
-    setNoteError(null);
-    if (!supabase) {
-      setNoteError("Supabase chưa kết nối.");
-      return;
+  const sess = useMemo(() => {
+    const isAll = filter === "All";
+    const utm = SESSION_UTM[filter];
+    const available = isAll || utm !== undefined;
+    const byDay = new Map<string, number>();
+    if (available) {
+      for (const r of ga4) {
+        if (r.channel !== "paid" || r.date < start || r.date > end) continue;
+        if (!isAll && !utm!.includes(String(r.campaign ?? "").toLowerCase())) continue;
+        byDay.set(r.date, (byDay.get(r.date) ?? 0) + r.sessions);
+      }
     }
-    if (!noteDate || !noteText.trim()) {
-      setNoteError("Nhập ngày và nội dung note.");
-      return;
-    }
-    const { error } = await supabase.from("optimization_log").insert({ date: noteDate, page: "paid", note: noteText.trim() });
-    if (error) {
-      setNoteError(error.message);
-      return;
-    }
-    setNoteText("");
-    loadNotes();
-  };
+    return { byDay, available };
+  }, [ga4, start, end, filter]);
+
+  const vm = useMemo(() => buildViewModel(meta, days, filter, metrics, log, sess), [meta, days, filter, metrics, log, sess]);
 
   if (days.length === 0) {
-    return <EmptyState title="No paid data in range" message="No FYI meta campaigns found for the selected dates." />;
+    return (
+      <div style={fullBleed}>
+        <FontLink />
+        <EmptyState
+          title="No paid data in range"
+          message="No FYI Meta campaigns found for the selected dates."
+        />
+      </div>
+    );
   }
 
+  const addLog = () => {
+    const text = draftText.trim();
+    if (!text) return;
+    const date = draftDate || vm.curE;
+    const next = [...log, { id: `u${Date.now()}`, date, text }];
+    saveLog(next);
+    setDraftText("");
+  };
+
   return (
-    <div className="flex items-start gap-4">
-      <div className="w-3/5 space-y-4">
-        <div className="inline-flex gap-1 rounded-lg bg-slate-100 p-1">
-          {TABS.map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setCampaign(tab)}
-              className={[
-                "rounded-md px-3 py-1 text-xs font-normal transition-colors",
-                campaign === tab ? "border-slate-200 bg-white text-slate-900" : "border-transparent text-slate-500",
-              ].join(" ")}
-              style={{ borderWidth: 0.5, borderStyle: "solid" }}
-            >
-              {tab}
-            </button>
+    <div style={fullBleed}>
+      <FontLink />
+      <div style={{ maxWidth: 1480, margin: "0 auto", display: "flex", flexDirection: "column", gap: 20 }}>
+
+        {/* HEADER + FILTER */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.12em", color: "#94A3B8", marginBottom: 5 }}>
+                Paid Channels · Meta Ads
+              </div>
+              <h1 style={{ fontSize: 25, fontWeight: 800, color: "#0F172A", letterSpacing: "-0.025em" }}>FYI Paid Media Report</h1>
+            </div>
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#94A3B8", marginBottom: 4 }}>
+                Lead definition
+              </div>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 7, background: "white", border: "1px solid rgba(0,0,0,0.06)", padding: "6px 12px", borderRadius: 8, boxShadow: "0 1px 2px rgba(0,0,0,0.04)" }}>
+                <div style={{ width: 8, height: 8, borderRadius: "50%", background: vm.leadDefColor }} />
+                <span style={{ fontSize: 12, color: "#64748B" }}>Lead =</span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{vm.leadDefLabel}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* filter chips */}
+          <div style={{ display: "flex", gap: 7, flexWrap: "wrap", alignItems: "center" }}>
+            <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 600, marginRight: 2 }}>Campaign:</span>
+            {vm.chips.map((ch) => (
+              <div
+                key={ch.key}
+                onClick={() => setFilter(ch.active ? "All" : ch.key)}
+                style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 6, padding: "5px 12px", borderRadius: 8, fontSize: 12, fontWeight: 700, background: ch.bg, color: ch.color, border: `1px solid ${ch.border}`, transition: "all .12s" }}
+              >
+                <div style={{ width: 7, height: 7, borderRadius: 2, background: ch.dot }} />
+                {ch.label}
+                <span style={{ fontSize: 10, fontWeight: 600, opacity: 0.7 }}>{ch.share}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* KPI ROW */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 13 }}>
+          {vm.kpis.map((k) => (
+            <div key={k.label} style={{ background: k.cardBg, borderRadius: 13, padding: "17px 19px", boxShadow: "0 1px 3px rgba(0,0,0,0.05)", border: `1px solid ${k.cardBorder}`, position: "relative", overflow: "hidden" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 11 }}>
+                <div style={{ width: 22, height: 22, borderRadius: 6, background: k.iconBg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <div style={{ width: 9, height: 9, borderRadius: k.iconShape, background: k.color }} />
+                </div>
+                <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "#64748B" }}>{k.label}</div>
+              </div>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+                <span style={{ fontSize: 26, fontWeight: 800, color: k.valColor, letterSpacing: "-0.03em" }}>{k.value}</span>
+                <span style={{ fontSize: 12, fontWeight: 600, color: "#94A3B8" }}>{k.unit}</span>
+              </div>
+              <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 5 }}>{k.sub}</div>
+            </div>
           ))}
         </div>
 
-        <Section label="Metrics">
-          <div className="grid grid-cols-3 gap-3">
-            {cards.map((c) => (
-              <div key={c.label} className="rounded-md bg-slate-50 p-3">
-                <p className="text-[11px] font-normal text-slate-400">{c.label}</p>
-                <p className="mt-0.5 text-[20px] font-medium leading-tight text-slate-900">{fmt(c.value, c.kind)}</p>
-                <div className="mt-1">
-                  <Wow value={c.value} previous={c.prev} />
+        {/* DAILY TREND */}
+        <div style={card}>
+          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 18, flexWrap: "wrap", gap: 12 }}>
+            <div>
+              <h2 style={h2}>Daily Trend</h2>
+              <p style={{ fontSize: 11, color: "#94A3B8", marginTop: 2 }}>{vm.trendSub}</p>
+            </div>
+            <div style={{ display: "flex", gap: 5, alignItems: "center", flexWrap: "wrap" }}>
+              <span style={{ fontSize: 10, color: "#CBD5E1", fontWeight: 700, marginRight: 3 }}>Cost vs</span>
+              {vm.metricBtns.map((m) => (
+                <div key={m.key} onClick={() => !m.disabled && toggleMetric(m.key)} title={m.disabled ? "Not tracked for this campaign" : undefined} style={{ cursor: m.disabled ? "not-allowed" : "pointer", padding: "5px 11px", borderRadius: 7, fontSize: 11, fontWeight: 700, background: m.bg, color: m.color, border: `1px solid ${m.border}`, opacity: m.disabled ? 0.5 : 1, transition: "all .12s" }}>
+                  {m.label}
                 </div>
-                {c.note && <p className="mt-0.5 text-[10px] italic text-slate-400">{c.note}</p>}
+              ))}
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: 18, alignItems: "center", marginBottom: 6, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <div style={{ width: 14, height: 9, background: "#2563EB", borderRadius: 2, opacity: 0.85 }} />
+              <span style={{ fontSize: 11, color: "#64748B", fontWeight: 600 }}>Cost (₩)</span>
+            </div>
+            {vm.legendLines.map((l) => (
+              <div key={l.label} style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <div style={{ width: 16, height: 0, borderTop: `2.5px dashed ${l.color}` }} />
+                <span style={{ fontSize: 11, color: "#64748B", fontWeight: 600 }}>{l.label}</span>
               </div>
             ))}
           </div>
-        </Section>
 
-        <Section label="Daily trend">
-          <div className="w-full" style={{ height: 200 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={chartData} margin={{ top: 16, right: 8, bottom: 0, left: -8 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" strokeWidth={0.5} vertical={false} />
-                <XAxis dataKey="ts" type="number" scale="time" domain={[startMs, endMs]} tickFormatter={fmtTick} tickLine={false} axisLine={false} minTickGap={24} tick={{ fill: "#94a3b8", fontSize: 10 }} />
-                <YAxis yAxisId="left" tickLine={false} axisLine={false} tick={{ fill: "#94a3b8", fontSize: 10 }} />
-                <YAxis yAxisId="right" orientation="right" tickLine={false} axisLine={false} tick={{ fill: "#94a3b8", fontSize: 10 }} />
-                <Tooltip labelFormatter={(d) => fmtTick(Number(d))} contentStyle={{ borderRadius: 8, border: "0.5px solid #e2e8f0", fontSize: 11 }} />
-                <Bar yAxisId="left" dataKey="spend" name="Spend" fill="#cbd5e1" radius={[3, 3, 0, 0]} barSize={14} />
-                <Line yAxisId="right" type="monotone" dataKey="submissions" name="Submissions" stroke="#7c3aed" strokeWidth={2} dot={false} />
-                <Line yAxisId="right" type="monotone" dataKey="jobApps" name="Job apps" stroke="#14b8a6" strokeWidth={2} strokeDasharray="5 4" dot={false} />
-                {markers.map((m, i) => (
-                  <ReferenceLine
-                    key={`${m.date}-${i}`}
-                    yAxisId="left"
-                    x={dayMs(m.date)}
-                    stroke={m.color}
-                    strokeDasharray="4 4"
-                    label={<NoteLabel value={markerLabel(m.note)} row={m.row} color={m.color} />}
-                  />
-                ))}
-              </ComposedChart>
-            </ResponsiveContainer>
+          <div style={{ position: "relative" }}>
+            <svg viewBox="0 0 940 264" style={{ width: "100%", height: "auto", overflow: "visible" }}>
+              <defs>
+                <linearGradient id="costGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#2563EB" stopOpacity="0.16" />
+                  <stop offset="100%" stopColor="#2563EB" stopOpacity="0" />
+                </linearGradient>
+              </defs>
+              {vm.yLeft.map((g, i) => (
+                <g key={`l${i}`}>
+                  <line x1="62" y1={g.y} x2="878" y2={g.y} stroke="#F1F5F9" strokeWidth="1" />
+                  <text x="55" y={g.y} textAnchor="end" dominantBaseline="middle" style={{ fontSize: 9, fill: "#CBD5E1", fontWeight: 700 }}>{g.label}</text>
+                </g>
+              ))}
+              {vm.yRight.map((g, i) => (
+                <text key={`r${i}`} x="886" y={g.y} textAnchor="start" dominantBaseline="middle" style={{ fontSize: 9, fill: vm.rightAxisColor, fontWeight: 700, opacity: 0.7 }}>{g.label}</text>
+              ))}
+              {vm.optMarkers.map((o) => (
+                <g key={`m${o.n}`}>
+                  <line x1={o.x} y1="40" x2={o.x} y2="208" stroke="#94A3B8" strokeWidth="1" strokeDasharray="3,3" opacity="0.55" />
+                  <circle cx={o.x} cy="30" r="8.5" fill="#0F172A" />
+                  <text x={o.x} y="30" textAnchor="middle" dominantBaseline="central" style={{ fontSize: 9, fill: "#fff", fontWeight: 800 }}>{o.n}</text>
+                </g>
+              ))}
+              <path d={vm.spendArea} fill="url(#costGrad)" />
+              <path d={vm.spendPath} fill="none" stroke="#2563EB" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+              {vm.trendLines.map((l, i) => (
+                <path key={`tl${i}`} d={l.path} fill="none" stroke={l.color} strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="6,4" />
+              ))}
+              {vm.xTicks.map((t, i) => (
+                <g key={`x${i}`}>
+                  <line x1={t.x} y1="208" x2={t.x} y2="212" stroke="#CBD5E1" strokeWidth="1" />
+                  <text x={t.x} y="226" textAnchor="middle" style={{ fontSize: 9.5, fill: "#94A3B8", fontWeight: 600 }}>{t.label}</text>
+                </g>
+              ))}
+            </svg>
+            {vm.metricEmpty && (
+              <div style={{ position: "absolute", top: "38%", left: 0, right: 0, display: "flex", justifyContent: "center" }}>
+                <div style={{ background: "#FFF7ED", border: "1px solid #FED7AA", color: "#9A3412", fontSize: 11, fontWeight: 600, padding: "7px 14px", borderRadius: 8 }}>{vm.emptyMsg}</div>
+              </div>
+            )}
           </div>
-        </Section>
 
-        <Section label="Optimization log">
-          <div className="space-y-2">
-            {notes.length === 0 && <p className="text-xs text-slate-400">No notes yet.</p>}
-            {notes.map((n, i) => (
-              <div key={`${n.date}-${i}`} className="rounded-r-md bg-slate-50 px-3 py-2" style={{ borderLeftWidth: 2, borderLeftStyle: "solid", borderLeftColor: noteColor(n.note) }}>
-                <p className="text-[10px] font-normal text-slate-400">{formatDateShort(n.date)}</p>
-                <p className="text-xs font-normal text-slate-700">{n.note}</p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "7px 14px", marginTop: 14, paddingTop: 14, borderTop: "1px solid #F1F5F9" }}>
+            <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#CBD5E1", alignSelf: "center" }}>Optimization log ↑</span>
+            {vm.optLegend.map((o) => (
+              <div key={o.n} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ width: 16, height: 16, borderRadius: "50%", background: "#0F172A", color: "#fff", fontSize: 9, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{o.n}</span>
+                <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 700 }}>{o.date}</span>
+                <span style={{ fontSize: 11, color: "#475569" }}>{o.action}</span>
               </div>
             ))}
           </div>
-          <div className="mt-3 flex items-end gap-2">
-            <input
-              type="date"
-              value={noteDate}
-              onChange={(e) => setNoteDate(e.target.value)}
-              className="rounded-md border-slate-200 px-2 py-1.5 text-xs text-slate-700 outline-none focus:border-purple-500"
-              style={{ borderWidth: 0.5, borderStyle: "solid" }}
-            />
-            <input
-              type="text"
-              value={noteText}
-              onChange={(e) => setNoteText(e.target.value)}
-              placeholder="Add an optimization note"
-              className="flex-1 rounded-md border-slate-200 px-3 py-1.5 text-xs text-slate-700 outline-none focus:border-purple-500"
-              style={{ borderWidth: 0.5, borderStyle: "solid" }}
-            />
-            <button onClick={addNote} className="inline-flex items-center gap-1 rounded-md bg-purple-600 px-3 py-1.5 text-xs font-normal text-white hover:bg-purple-700">
-              <Plus className="h-3.5 w-3.5" />
-              Add
-            </button>
-          </div>
-          {noteError && <p className="mt-2 text-[11px] text-red-500">{noteError}</p>}
-        </Section>
-      </div>
+        </div>
 
-      <div className="w-2/5 space-y-4">
-        <Section label="Monthly targets">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="text-left text-[10px] font-normal uppercase tracking-[0.06em] text-slate-400">
-                <th className="pb-2 font-normal">KPI</th>
-                <th className="pb-2 text-right font-normal">Target</th>
-                <th className="pb-2 text-right font-normal">Actual</th>
-                <th className="pb-2 text-right font-normal">Achievement</th>
-              </tr>
-            </thead>
-            <tbody>
-              {TARGET_KPIS.map((kpi, i) => {
-                const target = targets[kpi.key] ?? 0;
-                const actual = actuals[kpi.key] ?? 0;
-                const pct = achievement(actual, target, kpi.lowerBetter);
-                return (
-                  <tr key={kpi.key} className={i % 2 === 1 ? "bg-slate-50" : ""}>
-                    <td className="py-1.5 font-normal text-slate-700">{kpi.key}</td>
-                    <td className="py-1.5 text-right">
-                      <input
-                        type="number"
-                        value={target}
-                        onChange={(e) => setTargets({ ...targets, [kpi.key]: Number(e.target.value) })}
-                        onBlur={(e) => saveTarget(kpi.key, Number(e.target.value))}
-                        className="w-24 rounded-md border-slate-200 px-2 py-1 text-right text-xs text-slate-700 outline-none focus:border-purple-500"
-                        style={{ borderWidth: 0.5, borderStyle: "solid" }}
-                      />
-                    </td>
-                    <td className="py-1.5 text-right text-slate-600">{kpi.kind === "vnd" ? formatKRW(actual) : formatNumber(actual)}</td>
-                    <td className="py-1.5 text-right">
-                      <span className={["inline-flex rounded-full px-2 py-0.5 text-[10px] font-normal", achClass(pct)].join(" ")}>{pct.toFixed(0)}%</span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </Section>
-
-        <Section label="Creative performance">
-          <div className="mb-3 inline-flex gap-1 rounded-lg bg-slate-100 p-1">
-            {CREATIVE_TABS.map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setCreativeTab(tab)}
-                className={[
-                  "rounded-md px-3 py-1 text-xs font-normal transition-colors",
-                  creativeTab === tab ? "border-slate-200 bg-white text-slate-900" : "border-transparent text-slate-500",
-                ].join(" ")}
-                style={{ borderWidth: 0.5, borderStyle: "solid" }}
+        {/* CAMPAIGN TABLE + DONUT */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 312px", gap: 16 }}>
+          <div style={card}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+              <h2 style={h2}>{vm.topTitle}</h2>
+              <span style={{ fontSize: 11, color: "#94A3B8" }}>{vm.topSub}</span>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "150px 1fr 64px 78px 60px 56px", gap: 8, paddingBottom: 9, borderBottom: "1px solid #F1F5F9" }}>
+              <span style={th}>{vm.topColHead}</span>
+              <span style={th}>Spend (₩)</span>
+              <span style={{ ...th, textAlign: "right" }}>Leads</span>
+              <span style={{ ...th, textAlign: "center" }}>CP Lead</span>
+              <span style={{ ...th, textAlign: "right" }}>Clicks</span>
+              <span style={{ ...th, textAlign: "right" }}>CTR</span>
+            </div>
+            {vm.topRows.map((c, i) => (
+              <div
+                key={`${c.name}-${i}`}
+                onClick={() => { if (vm.isAll) setFilter(filter === c.name ? "All" : c.name); }}
+                style={{ cursor: c.cursor, display: "grid", gridTemplateColumns: "150px 1fr 64px 78px 60px 56px", gap: 8, padding: "11px 0", borderBottom: "1px solid #F8FAFC", alignItems: "center", background: c.rowBg, borderRadius: 6 }}
               >
-                {tab}
-              </button>
-            ))}
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="text-left text-[10px] font-normal uppercase tracking-[0.06em] text-slate-400">
-                  {creativeColumns.map((col) => (
-                    <th key={col.key} className={col.align === "right" ? "pb-2 text-right font-normal" : "pb-2 font-normal"}>
-                      {col.key === "rank" ? (
-                        col.label
-                      ) : (
-                        <button onClick={() => toggleSort(col.key as SortKey)} className={["inline-flex items-center gap-0.5 hover:text-slate-600", col.align === "right" ? "flex-row-reverse" : ""].join(" ")}>
-                          {col.label}
-                          {sortKey === col.key && (sortDir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
-                        </button>
-                      )}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {sortedCreatives.map((c, i) => (
-                  <tr key={c.adName} className={i % 2 === 1 ? "bg-slate-50" : ""}>
-                    {creativeColumns.map((col) => {
-                      if (col.key === "rank") return <td key={col.key} className="py-1.5 text-slate-400">{i + 1}</td>;
-                      if (col.key === "adName") return <td key={col.key} className="max-w-[120px] truncate py-1.5 pr-2 font-normal text-slate-700">{c.adName}</td>;
-                      if (col.key === "audience") return <td key={col.key} className="py-1.5 pr-2 text-slate-500">{c.audience || "—"}</td>;
-                      const val = c[col.key] as number;
-                      return <td key={col.key} className="py-1.5 text-right text-slate-600">{col.fmt ? col.fmt(val) : val}</td>;
-                    })}
-                  </tr>
-                ))}
-                {sortedCreatives.length === 0 && (
-                  <tr>
-                    <td colSpan={creativeColumns.length} className="py-4 text-center text-slate-400">No creatives in range.</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </Section>
-
-        <Section label="Audience breakdown">
-          <div className="space-y-3">
-            {audience.length === 0 && <p className="text-xs text-slate-400">No audience data.</p>}
-            {audience.map((a) => (
-              <div key={a.segment} className="flex items-center gap-3">
-                <span className="w-28 shrink-0 truncate text-xs font-normal text-slate-600">{a.segment}</span>
-                <div className="flex-1">
-                  <div className="rounded-full" style={{ height: 6, width: `${(a.spend / audienceMax) * 100}%`, backgroundColor: "#7c3aed" }} />
+                <div style={{ display: "flex", alignItems: "center", gap: 8, paddingLeft: 4 }}>
+                  <div style={{ width: 8, height: 8, borderRadius: 2, flexShrink: 0, background: c.color }} />
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{c.name}</div>
+                    <div style={{ fontSize: 9, color: "#94A3B8", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>{c.leadType}</div>
+                  </div>
                 </div>
-                <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-normal text-slate-600">{formatKRW(a.cpl)} CPL</span>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "#0F172A", marginBottom: 4 }}>{c.spend}</div>
+                  <div style={{ height: 5, background: "#F1F5F9", borderRadius: 3, overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: `${c.barW}%`, borderRadius: 3, background: c.color }} />
+                  </div>
+                </div>
+                <div style={{ textAlign: "right", fontSize: 13, fontWeight: 600, color: "#0F172A" }}>{c.leads}</div>
+                <div style={{ textAlign: "center" }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 5, background: c.cplBg, color: c.cplColor, display: "inline-block" }}>{c.cpl}</span>
+                </div>
+                <div style={{ textAlign: "right", fontSize: 12, color: "#64748B" }}>{c.clicks}</div>
+                <div style={{ textAlign: "right", fontSize: 12, fontWeight: 700, color: c.ctrColor }}>{c.ctr}%</div>
+              </div>
+            ))}
+            <div style={{ display: "grid", gridTemplateColumns: "150px 1fr 64px 78px 60px 56px", gap: 8, padding: "12px 4px 0", alignItems: "center" }}>
+              <span style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.05em", color: "#0F172A" }}>Total</span>
+              <span style={tot}>{vm.totSpend}</span>
+              <span style={{ ...tot, textAlign: "right" }}>{vm.totLeads}</span>
+              <span style={{ ...tot, textAlign: "center" }}>{vm.totCpl}</span>
+              <span style={{ ...tot, textAlign: "right" }}>{vm.totClicks}</span>
+              <span style={{ ...tot, textAlign: "right" }}>{vm.totCtr}%</span>
+            </div>
+          </div>
+
+          <div style={card}>
+            <h2 style={{ ...h2, marginBottom: 10 }}>{vm.mixTitle}</h2>
+            <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }}>
+              <svg viewBox="0 0 240 200" width="210" height="175">
+                <circle cx="120" cy="100" r="70" fill="none" stroke="#F1F5F9" strokeWidth="26" />
+                {vm.donutSegs.map((d, i) => (
+                  <circle key={i} cx="120" cy="100" r="70" fill="none" stroke={d.color} strokeWidth="26" strokeDasharray={d.dash} strokeDashoffset={d.offset} transform="rotate(-90 120 100)" />
+                ))}
+                <text x="120" y="93" textAnchor="middle" style={{ fontSize: 18, fontWeight: 800, fill: "#0F172A", fontFamily: FONT }}>{vm.donutTotal}</text>
+                <text x="120" y="110" textAnchor="middle" style={{ fontSize: 10, fill: "#94A3B8", fontFamily: FONT }}>₩ total</text>
+              </svg>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+              {vm.spendLegend.map((s, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                    <div style={{ width: 9, height: 9, borderRadius: 2, background: s.color }} />
+                    <span style={{ fontSize: 11, color: "#334155", fontWeight: 500 }}>{s.name}</span>
+                  </div>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: "#0F172A" }}>{s.pct}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* CREATIVE PERFORMANCE */}
+        <div>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 13, flexWrap: "wrap", gap: 8 }}>
+            <div>
+              <h2 style={{ ...h2, display: "inline" }}>Creative Performance</h2>
+              <span style={{ fontSize: 11, color: "#94A3B8", marginLeft: 10 }}>{vm.creativeSub}</span>
+            </div>
+            <span style={{ fontSize: 10, color: "#94A3B8", fontFamily: "'JetBrains Mono', monospace", background: "#F1F5F9", padding: "3px 8px", borderRadius: 5 }}>img drops in from image_url</span>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14 }}>
+            {vm.creatives.map((cr, i) => (
+              <div key={i} style={{ background: "white", borderRadius: 13, boxShadow: "0 1px 3px rgba(0,0,0,0.05)", border: "1px solid rgba(0,0,0,0.04)", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+                <div style={{ position: "relative", aspectRatio: "4 / 3", background: cr.imgBg, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", backgroundImage: cr.imageUrl ? undefined : `repeating-linear-gradient(135deg, rgba(255,255,255,0.5) 0 6px, transparent 6px 12px), ${cr.imgBg}` }}>
+                  {cr.imageUrl && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={cr.imageUrl} alt={cr.name} loading="lazy" referrerPolicy="no-referrer" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
+                  )}
+                  <div style={{ position: "absolute", top: 9, left: 9, display: "flex", gap: 5 }}>
+                    <span style={{ fontSize: 9, fontWeight: 800, color: "#fff", background: "rgba(0,0,0,0.28)", padding: "2px 7px", borderRadius: 20 }}>#{cr.rank}</span>
+                    <span style={{ fontSize: 9, fontWeight: 700, color: "#fff", background: "rgba(0,0,0,0.28)", padding: "2px 7px", borderRadius: 20 }}>{cr.format}</span>
+                  </div>
+                  <span style={{ position: "absolute", top: 9, right: 9, fontSize: 9, fontWeight: 700, color: cr.perfColor, background: "#fff", padding: "2px 7px", borderRadius: 20 }}>{cr.perfLabel}</span>
+                  {!cr.imageUrl && (
+                    <div style={{ textAlign: "center", color: "rgba(255,255,255,0.92)" }}>
+                      <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" strokeWidth="1.6" style={{ opacity: 0.85 }}>
+                        <rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.6" /><path d="M21 15l-5-5L5 21" />
+                      </svg>
+                      <div style={{ fontSize: 9, fontFamily: "'JetBrains Mono', monospace", marginTop: 5, opacity: 0.9 }}>{cr.name}</div>
+                    </div>
+                  )}
+                </div>
+                <div style={{ padding: "13px 14px 15px", display: "flex", flexDirection: "column", gap: 11 }}>
+                  <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: "#0F172A", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cr.name}</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "flex-end", gap: 4 }}>
+                    <span style={{ fontSize: 24, fontWeight: 800, color: cr.ctrColor, letterSpacing: "-0.02em", lineHeight: 1 }}>{cr.ctr}%</span>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", marginBottom: 2 }}>CTR</span>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 7 }}>
+                    {[["CP Lead", cr.cpl], ["Leads", cr.leads], ["Spend", cr.spend]].map(([lbl, val]) => (
+                      <div key={lbl}>
+                        <div style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: "0.05em", color: "#94A3B8", fontWeight: 700, marginBottom: 2 }}>{lbl}</div>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: "#0F172A" }}>{val}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             ))}
           </div>
-        </Section>
+        </div>
 
-        {dbStatus === "connecting" && <p className="text-[10px] text-slate-400">Supabase not connected — submissions, job applications, targets and notes unavailable.</p>}
+        {/* AUDIENCE / CREATIVE BREAKDOWN */}
+        <div style={card}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+            <h2 style={h2}>{vm.botTitle}</h2>
+            <span style={{ fontSize: 11, color: "#94A3B8" }}>{vm.botSub}</span>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 64px 78px 60px 56px", gap: 10, paddingBottom: 9, borderBottom: "1px solid #F1F5F9" }}>
+            <span style={th}>{vm.botColHead}</span>
+            <span style={{ ...th, textAlign: "right" }}>Leads</span>
+            <span style={{ ...th, textAlign: "center" }}>CP Lead</span>
+            <span style={{ ...th, textAlign: "right" }}>Clicks</span>
+            <span style={{ ...th, textAlign: "right" }}>CTR</span>
+          </div>
+          {vm.botRows.map((a, i) => (
+            <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 64px 78px 60px 56px", gap: 10, padding: "11px 0", borderBottom: "1px solid #F8FAFC", alignItems: "center" }}>
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 5 }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{a.name}</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{a.spend}</span>
+                  <span style={{ fontSize: 10, color: "#94A3B8" }}>{a.share}</span>
+                </div>
+                <div style={{ height: 6, background: "#F1F5F9", borderRadius: 3, overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${a.barW}%`, borderRadius: 3, background: a.color }} />
+                </div>
+              </div>
+              <div style={{ textAlign: "right", fontSize: 13, fontWeight: 600, color: "#0F172A" }}>{a.leads}</div>
+              <div style={{ textAlign: "center" }}>
+                <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 5, background: a.cplBg, color: a.cplColor, display: "inline-block" }}>{a.cpl}</span>
+              </div>
+              <div style={{ textAlign: "right", fontSize: 12, color: "#64748B" }}>{a.clicks}</div>
+              <div style={{ textAlign: "right", fontSize: 12, fontWeight: 700, color: a.ctrColor }}>{a.ctr}%</div>
+            </div>
+          ))}
+        </div>
+
+        {/* OPTIMIZATION LOG + INSIGHTS */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 16 }}>
+          <div style={card}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+              <h2 style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.09em", color: "#94A3B8" }}>Optimization Log</h2>
+              <span style={{ fontSize: 11, color: "#CBD5E1" }}>{log.length} entries</span>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
+              {vm.logEntries.map((e) => (
+                <div key={e.id} style={{ position: "relative", background: "#F8FAFC", borderRadius: 8, borderLeft: `3px solid ${e.accent}`, padding: "9px 14px 10px" }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: "#94A3B8", marginBottom: 2 }}>{e.dateLabel}</div>
+                  <div style={{ fontSize: 13, color: "#0F172A", lineHeight: 1.45, paddingRight: 20 }}>{e.text}</div>
+                  <div onClick={() => saveLog(log.filter((x) => x.id !== e.id))} title="Delete" style={{ position: "absolute", top: 8, right: 10, cursor: "pointer", color: "#CBD5E1", fontSize: 15, lineHeight: 1, fontWeight: 600 }}>×</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
+              <input type="date" value={draftDate || vm.curE} min={vm.logMin} max={vm.logMax} onChange={(ev) => setDraftDate(ev.target.value)} style={{ border: "1px solid #E2E8F0", borderRadius: 8, padding: "8px 10px", fontSize: 12, color: "#334155", fontFamily: FONT, background: "#fff", flexShrink: 0 }} />
+              <input type="text" value={draftText} onChange={(ev) => setDraftText(ev.target.value)} onKeyDown={(ev) => ev.key === "Enter" && addLog()} placeholder="Add an optimization note" style={{ flex: 1, border: "1px solid #E2E8F0", borderRadius: 8, padding: "8px 12px", fontSize: 13, color: "#334155", fontFamily: FONT, background: "#fff" }} />
+              <div onClick={addLog} style={{ flexShrink: 0, cursor: "pointer", background: "#7C3AED", color: "#fff", fontSize: 13, fontWeight: 700, padding: "8px 16px", borderRadius: 8, display: "flex", alignItems: "center", gap: 5 }}>+ Add</div>
+            </div>
+          </div>
+
+          <div style={{ ...card, display: "flex", flexDirection: "column", gap: 10 }}>
+            <h2 style={{ ...h2, marginBottom: 4 }}>Report Insights</h2>
+            {MEMOS.map((m) => (
+              <div key={m.date} style={{ padding: "12px 14px", background: "#F8FAFC", borderRadius: 8, borderLeft: "3px solid #2563EB" }}>
+                <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#2563EB", marginBottom: 5 }}>{m.date}</div>
+                <div style={{ fontSize: 12, color: "#334155", lineHeight: 1.6 }}>{m.content}</div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
+  );
+}
+
+/* ── view-model builder ─────────────────────────────────────────────── */
+
+function buildViewModel(meta: MetaDay[], days: MetaDay[], filter: string, metrics: Metric[], log: LogEntry[], sess: { byDay: Map<string, number>; available: boolean }) {
+  const isAll = filter === "All";
+  const sel = filter;
+  const selColor = isAll ? "#2563EB" : colorOf(sel);
+
+  // products: stable across ranges (from full data), ordered by in-range spend desc
+  const ptAll = new Map<string, Agg>();
+  for (const p of new Set(meta.map((r) => r.product).filter(Boolean))) ptAll.set(p, newAgg());
+  for (const r of days) {
+    const o = ptAll.get(r.product);
+    if (o) addRow(o, r);
+  }
+  const products = [...ptAll.entries()].sort((a, b) => b[1].spend - a[1].spend).map(([p]) => p);
+  const pt = (p: string) => ptAll.get(p) ?? newAgg();
+  const grandSpend = products.reduce((s, p) => s + pt(p).spend, 0);
+
+  // selected aggregate
+  const selRows = days.filter((r) => isAll || r.product === sel);
+  let aSpend = 0, aClk = 0, aImp = 0, aConv = 0;
+  for (const r of selRows) { aSpend += r.spend; aClk += r.clicks; aImp += r.impressions; aConv += r.leads; }
+  const aCtr = aImp > 0 ? (aClk / aImp) * 100 : 0;
+  const aCpl = aConv > 0 ? aSpend / aConv : 0;
+  const avgCpl = aCpl || 600;
+  const avgCtr = aCtr || 1;
+
+  // range bounds (actual data days present)
+  const rangeDays = [...new Set(days.map((r) => r.date))].sort();
+  const curS = rangeDays[0];
+  const curE = rangeDays[rangeDays.length - 1];
+  const rangeLabel = `${fmtDay(curS)} – ${fmtDay(curE)}, 2026 · ${rangeDays.length} days`;
+
+  const leadDefLabel = isAll ? "varies by campaign" : leadDefOf(sel);
+  const leadDefColor = isAll ? "#94A3B8" : selColor;
+  const headerSub = isAll
+    ? `All Meta paid activity · ${rangeLabel} · ${products.length} campaigns`
+    : `${sel} campaign · lead = ${leadDefOf(sel).toLowerCase()} · ${rangeLabel}`;
+
+  // chips
+  const chipDefs = [{ key: "All", label: "All", color: "#0F172A" }].concat(
+    products.map((p, i) => ({ key: p, label: p, color: colorOf(p, i) }))
+  );
+  const chips = chipDefs.map((c) => {
+    const active = filter === c.key;
+    const sp = c.key === "All" ? grandSpend : pt(c.key).spend;
+    return {
+      key: c.key,
+      label: c.label,
+      active,
+      share: c.key === "All" || grandSpend === 0 ? "" : `${((sp / grandSpend) * 100).toFixed(0)}%`,
+      dot: c.color,
+      bg: active ? c.color : "#fff",
+      color: active ? "#fff" : "#475569",
+      border: active ? "transparent" : "rgba(0,0,0,0.08)",
+    };
+  });
+
+  // KPIs — all sourced from meta_ad_raw_data_v2
+  const kpis = [
+    { label: "Impressions", value: fmt(aImp), unit: "", sub: isAll ? `Across ${products.length} campaigns` : sel, color: "#2563EB", iconBg: "#DBEAFE", iconShape: "3px", cardBg: "#fff", cardBorder: "rgba(0,0,0,0.04)", valColor: "#0F172A" },
+    { label: "Clicks", value: fmt(aClk), unit: "", sub: "Link clicks", color: "#7C3AED", iconBg: "#EDE9FE", iconShape: "50%", cardBg: "#fff", cardBorder: "rgba(0,0,0,0.04)", valColor: "#0F172A" },
+    { label: "CTR", value: aCtr.toFixed(2), unit: "%", sub: "Click-through rate", color: "#D97706", iconBg: "#FEF3C7", iconShape: "50%", cardBg: "#fff", cardBorder: "rgba(0,0,0,0.04)", valColor: "#0F172A" },
+    { label: "Leads", value: fmt(aConv), unit: "", sub: `Lead = ${leadDefLabel}`, color: "#059669", iconBg: "#DCFCE7", iconShape: "50%", cardBg: "#fff", cardBorder: "rgba(0,0,0,0.04)", valColor: "#0F172A" },
+    { label: "CP Lead", value: aCpl > 0 ? fmt(aCpl) : "—", unit: "₩", sub: "Cost per lead", color: "#DB2777", iconBg: "#FCE7F3", iconShape: "3px", cardBg: "#fff", cardBorder: "rgba(0,0,0,0.04)", valColor: "#0F172A" },
+  ];
+
+  // daily series
+  const N = rangeDays.length;
+  const dayIdx = new Map(rangeDays.map((d, i) => [d, i]));
+  const perDay = rangeDays.map(() => ({ spend: 0, clk: 0, imp: 0, conv: 0 }));
+  for (const r of selRows) {
+    const d = perDay[dayIdx.get(r.date)!];
+    d.spend += r.spend; d.clk += r.clicks; d.imp += r.impressions; d.conv += r.leads;
+  }
+
+  const METRICS: Record<Metric, { label: string; color: string; empty: boolean }> = {
+    leads: { label: isAll ? "Leads" : leadDefOf(sel), color: "#059669", empty: false },
+    jobapp: { label: "Job applications", color: "#0891B2", empty: false },
+    clicks: { label: "Clicks", color: "#7C3AED", empty: false },
+    ctr: { label: "CTR", color: "#D97706", empty: false },
+    sessions: { label: "Sessions", color: "#DB2777", empty: !sess.available },
+    installs: { label: "App installs", color: "#475569", empty: true },
+  };
+  const metricBtns = (Object.keys(METRICS) as Metric[]).map((k) => {
+    const active = metrics.includes(k);
+    const disabled = k === "sessions" && !sess.available;
+    return {
+      key: k,
+      label: METRICS[k].label,
+      disabled,
+      bg: active ? METRICS[k].color : "#fff",
+      color: disabled ? "#CBD5E1" : active ? "#fff" : "#64748B",
+      border: active ? "transparent" : "rgba(0,0,0,0.08)",
+    };
+  });
+
+  // plot geometry
+  const X0 = 62, X1 = 878, Y0 = 44, Y1 = 208;
+  const xAt = (i: number) => (N > 1 ? X0 + ((X1 - X0) * i) / (N - 1) : X0);
+  const spendVals = perDay.map((d) => d.spend);
+  const sMax = niceMax(Math.max(...spendVals, 1));
+  const yS = (v: number) => Y1 - (Y1 - Y0) * (v / sMax);
+  const toPath = (vals: number[], yfn: (v: number) => number) =>
+    vals.map((v, i) => (i ? "L" : "M") + xAt(i).toFixed(1) + "," + yfn(v).toFixed(1)).join(" ");
+  const spendPath = toPath(spendVals, yS);
+  const spendArea = `${spendPath} L${X1},${Y1} L${X0},${Y1} Z`;
+
+  // per-metric daily series
+  const seriesVals = (m: Metric): number[] => {
+    if (m === "clicks") return perDay.map((d) => d.clk);
+    if (m === "ctr") return perDay.map((d) => (d.imp > 0 ? (d.clk / d.imp) * 100 : 0));
+    if (m === "sessions") return rangeDays.map((d) => sess.byDay.get(d) ?? 0);
+    return perDay.map((d) => d.conv); // leads, jobapp
+  };
+  // one dashed line per selected metric, each normalized to its own max
+  const lines = metrics.map((m) => {
+    const info = METRICS[m];
+    if (info.empty) return { key: m, empty: true, color: info.color, label: info.label, path: "", max: 1, isCtr: false };
+    const vals = seriesVals(m);
+    const mx = niceMax(Math.max(...vals, 1));
+    return { key: m, empty: false, color: info.color, label: info.label, path: toPath(vals, (v) => Y1 - (Y1 - Y0) * (v / mx)), max: mx, isCtr: m === "ctr" };
+  });
+  const nonEmpty = lines.filter((l) => !l.empty);
+  const trendLines = nonEmpty.map((l) => ({ path: l.path, color: l.color }));
+  const legendLines = lines.map((l) => ({ color: l.color, label: l.label }));
+
+  const ticks = 4;
+  const yLeft = Array.from({ length: ticks + 1 }, (_, i) => {
+    const val = (sMax * i) / ticks;
+    return { y: yS(val), label: val >= 1000 ? `${(val / 1000).toFixed(0)}K` : fmt(val) };
+  });
+  // right axis only meaningful with a single metric line; hidden when comparing several
+  const showRight = nonEmpty.length === 1;
+  const rightAxisColor = showRight ? nonEmpty[0].color : "#94A3B8";
+  const yRight = showRight
+    ? Array.from({ length: ticks + 1 }, (_, i) => {
+        const mx = nonEmpty[0].max;
+        const val = (mx * i) / ticks;
+        return { y: Y1 - (Y1 - Y0) * (val / mx), label: nonEmpty[0].isCtr ? `${val.toFixed(1)}%` : val >= 1000 ? `${(val / 1000).toFixed(0)}K` : fmt(val) };
+      })
+    : [];
+
+  const xTicks: { x: string; label: string }[] = [];
+  for (let i = 0; i < N; i += 1) {
+    xTicks.push({ x: xAt(i).toFixed(1), label: fmtDay(rangeDays[i]) });
+  }
+  const metricEmpty = metrics.length > 0 && nonEmpty.length === 0;
+  const labelList = metrics.map((m) => METRICS[m].label.toLowerCase());
+  const trendSub = `${isAll ? "All campaigns" : sel} · daily cost vs ${labelList.length ? labelList.join(", ") : "—"}`;
+  const emptyMsg = metrics.includes("sessions") && !sess.available
+    ? `Sessions not tracked for ${sel} (no website tracking)`
+    : "App install tracking not yet wired";
+
+  // top table
+  const mkRow = (name: string, color: string, leadType: string, o: Agg, maxV: number, clickable: boolean, rowBg = "transparent") => {
+    const cpl = o.lead > 0 ? o.spend / o.lead : 0;
+    const ctr = o.imp > 0 ? (o.clk / o.imp) * 100 : 0;
+    const cs = cplStyle(cpl, avgCpl);
+    return {
+      name, color, leadType,
+      spend: fmt(o.spend), barW: ((o.spend / maxV) * 100).toFixed(1),
+      leads: fmt(o.lead), cpl: cpl > 0 ? fmt(cpl) : "—", cplBg: cs.bg, cplColor: cs.color,
+      clicks: fmt(o.clk), ctr: ctr.toFixed(2), ctrColor: ctrCol(ctr),
+      cursor: clickable ? "pointer" : "default", rowBg,
+    };
+  };
+
+  const maxSp = Math.max(...products.map((p) => pt(p).spend), 1);
+  const campaignRows = products.map((p, i) =>
+    mkRow(p, colorOf(p, i), leadDefOf(p), pt(p), maxSp, true, filter === p ? "rgba(37,99,235,0.05)" : "transparent")
+  );
+
+  const adsetData = isAll ? [] : groupBy(selRows, (r) => r.audience);
+  const adsetMax = Math.max(...adsetData.map((a) => a.spend), 1);
+  const adsetRows = adsetData.map((a, i) => mkRow(a.name, PALETTE[i % PALETTE.length], "ad set", a, adsetMax, false));
+
+  const topRows = isAll ? campaignRows : adsetRows;
+
+  const topTitle = isAll ? "Campaign Performance" : `Ad Set Performance — ${sel}`;
+  const topSub = isAll ? `${products.length} campaigns · click a row to filter` : `${adsetData.length} ad sets · click the All chip to reset`;
+  const topColHead = isAll ? "Campaign" : "Ad Set";
+
+  const totSpend = fmt(aSpend), totLeads = fmt(aConv), totClicks = fmt(aClk);
+  const totCpl = aCpl > 0 ? fmt(aCpl) : "—", totCtr = aCtr.toFixed(2);
+
+  // donut
+  const C = 2 * Math.PI * 70;
+  const mixTotal = isAll ? grandSpend : aSpend;
+  const mixItems = isAll
+    ? products.map((p, i) => ({ name: p, spend: pt(p).spend, color: colorOf(p, i) }))
+    : adsetData.map((a, i) => ({ name: a.name, spend: a.spend, color: PALETTE[i % PALETTE.length] }));
+  let off = 0;
+  const donutSegs = mixItems.filter((it) => it.spend > 0).map((it) => {
+    const frac = mixTotal > 0 ? it.spend / mixTotal : 0;
+    const len = C * frac;
+    const seg = { color: it.color, dash: `${len.toFixed(1)} ${(C - len).toFixed(1)}`, offset: (-off).toFixed(1) };
+    off += len;
+    return seg;
+  });
+  const donutTotal = mixTotal >= 1000000 ? `${(mixTotal / 1000000).toFixed(2)}M` : `${Math.round(mixTotal / 1000)}K`;
+  const spendLegend = mixItems.slice(0, 8).map((it) => ({ name: it.name, color: it.color, pct: `${mixTotal > 0 ? ((it.spend / mixTotal) * 100).toFixed(1) : "0.0"}%` }));
+  const mixTitle = isAll ? "Spend Mix" : "Ad Set Mix";
+
+  // creatives
+  const imgByCre = new Map<string, string>();
+  for (const r of selRows) if (r.imageUrl && !imgByCre.has(r.adName)) imgByCre.set(r.adName, r.imageUrl);
+  const creAgg = groupBy(selRows, (r) => r.adName).map((o) => ({ ...o, ctr: o.imp > 0 ? (o.clk / o.imp) * 100 : 0 }));
+  const creList = [...creAgg].sort((a, b) => b.ctr - a.ctr).slice(0, 8);
+  const fmtName = (n: string) => {
+    const l = n.toLowerCase();
+    if (l.includes("anim")) return "Animation";
+    if (l.includes("real") || l.includes("video")) return "Video";
+    return "Static";
+  };
+  const creatives = creList.map((c, i) => {
+    const cpl = c.lead > 0 ? c.spend / c.lead : 0;
+    const perf = c.ctr >= avgCtr * 1.2 ? { l: "Top", c: "#059669" } : c.ctr >= avgCtr * 0.8 ? { l: "Good", c: "#D97706" } : { l: "Low", c: "#DC2626" };
+    return {
+      rank: String(i + 1).padStart(2, "0"), name: c.name, format: fmtName(c.name), imgBg: IMG_BGS[i % IMG_BGS.length],
+      imageUrl: imgByCre.get(c.name) || "",
+      ctr: c.ctr.toFixed(2), ctrColor: ctrCol(c.ctr), cpl: cpl > 0 ? fmt(cpl) : "—", leads: fmt(c.lead), spend: fmt(c.spend),
+      perfLabel: perf.l, perfColor: perf.c,
+    };
+  });
+  const creativeSub = `${isAll ? "All campaigns" : sel} · ${creList.length} creatives · sorted by CTR (high → low)`;
+
+  // bottom breakdown
+  const botSrc = (isAll ? groupBy(days, (r) => r.audience) : groupBy(selRows, (r) => r.adName)).slice(0, 8);
+  const botMaxSp = Math.max(...botSrc.map((a) => a.spend), 1);
+  const botSpendTot = botSrc.reduce((s, a) => s + a.spend, 0);
+  const botRows = botSrc.map((a, i) => {
+    const cpl = a.lead > 0 ? a.spend / a.lead : 0;
+    const ctr = a.imp > 0 ? (a.clk / a.imp) * 100 : 0;
+    const cs = cplStyle(cpl, avgCpl);
+    return {
+      name: a.name, color: PALETTE[i % PALETTE.length], spend: fmt(a.spend), barW: ((a.spend / botMaxSp) * 100).toFixed(1),
+      share: `${botSpendTot > 0 ? ((a.spend / botSpendTot) * 100).toFixed(0) : "0"}%`,
+      leads: fmt(a.lead), cpl: cpl > 0 ? fmt(cpl) : "—", cplBg: cs.bg, cplColor: cs.color, clicks: fmt(a.clk), ctr: ctr.toFixed(2), ctrColor: ctrCol(ctr),
+    };
+  });
+  const botTitle = isAll ? "Audience Breakdown" : `Creative Breakdown — ${sel}`;
+  const botColHead = isAll ? "Audience · Spend (₩)" : "Creative · Spend (₩)";
+  const botSub = isAll ? `${botRows.length} audiences across all campaigns` : `${botRows.length} creatives in ${sel}`;
+
+  // optimization log
+  const logSorted = [...log].sort((a, b) => b.date.localeCompare(a.date));
+  const logEntries = logSorted.map((e, i) => ({ id: e.id, dateLabel: fmtDay(e.date), text: e.text, accent: i % 2 === 0 ? "#7C3AED" : "#059669" }));
+  const inRangeLog = log.filter((e) => e.date >= curS && e.date <= curE).sort((a, b) => a.date.localeCompare(b.date));
+  const optMarkers = inRangeLog
+    .map((e, i) => { const di = rangeDays.indexOf(e.date); return di >= 0 ? { x: xAt(di).toFixed(1), n: i + 1 } : null; })
+    .filter((x): x is { x: string; n: number } => x !== null);
+  const optLegend = inRangeLog
+    .map((e, i) => { const di = rangeDays.indexOf(e.date); return di >= 0 ? { n: i + 1, date: fmtDay(e.date), action: e.text } : null; })
+    .filter((x): x is { n: number; date: string; action: string } => x !== null);
+
+  return {
+    isAll, headerSub, leadDefLabel, leadDefColor, chips, kpis, products,
+    curS, curE, logMin: rangeDays[0], logMax: rangeDays[rangeDays.length - 1],
+    trendSub, metricBtns, legendLines, trendLines, rightAxisColor,
+    spendPath, spendArea, yLeft, yRight, xTicks, metricEmpty, emptyMsg,
+    optMarkers, optLegend,
+    topRows, topTitle, topSub, topColHead, totSpend, totLeads, totCpl, totClicks, totCtr,
+    donutSegs, donutTotal, spendLegend, mixTitle,
+    creatives, creativeSub, botRows, botTitle, botSub, botColHead, logEntries,
+  };
+}
+
+/* ── shared style objects ───────────────────────────────────────────── */
+
+const fullBleed: React.CSSProperties = {
+  margin: "-24px -32px",
+  padding: "26px 32px 60px",
+  background: "#EEECEA",
+  minHeight: "calc(100% + 48px)",
+  fontFamily: FONT,
+  color: "#0F172A",
+};
+
+const card: React.CSSProperties = {
+  background: "white",
+  borderRadius: 13,
+  padding: "22px 24px",
+  boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+  border: "1px solid rgba(0,0,0,0.04)",
+};
+
+const h2: React.CSSProperties = { fontSize: 15, fontWeight: 700, letterSpacing: "-0.01em" };
+
+const th: React.CSSProperties = { fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "#94A3B8" };
+
+const tot: React.CSSProperties = { fontSize: 13, fontWeight: 800, color: "#0F172A" };
+
+function FontLink() {
+  return (
+    // eslint-disable-next-line @next/next/no-page-custom-font
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet" />
   );
 }
