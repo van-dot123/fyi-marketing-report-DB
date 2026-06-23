@@ -948,8 +948,11 @@ function buildViewModel(meta: MetaDay[], days: MetaDay[], filter: string, metric
       })
     : [];
 
+  // Thin out date labels for long ranges so they never overlap.
+  // Short ranges (≤18 days, e.g. the 2-week default) still show every day.
+  const xStep = Math.max(1, Math.ceil(N / 18));
   const xTicks: { x: string; label: string }[] = [];
-  for (let i = 0; i < N; i += 1) {
+  for (let i = 0; i < N; i += xStep) {
     xTicks.push({ x: xAt(i).toFixed(1), label: fmtDay(rangeDays[i]) });
   }
   const metricEmpty = metrics.length > 0 && nonEmpty.length === 0;
