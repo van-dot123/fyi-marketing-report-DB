@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   Megaphone,
+  CalendarDays,
   Share2,
   Filter,
   BellRing,
@@ -20,6 +21,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   { href: "/", label: "Overview", icon: LayoutDashboard },
   { href: "/paid", label: "Paid Channel", icon: Megaphone },
+  { href: "/daily", label: "Daily Report", icon: CalendarDays },
   { href: "/sns", label: "Organic SNS", icon: Share2 },
   { href: "/funnel", label: "Funnel", icon: Filter },
   { href: "/alerts", label: "WoW Alerts", icon: BellRing },

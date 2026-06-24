@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 const titles: Record<string, string> = {
   "/": "Overview",
   "/paid": "Paid Channel",
+  "/daily": "Daily Report",
   "/sns": "Organic SNS",
   "/funnel": "Funnel",
   "/alerts": "WoW Alerts",
