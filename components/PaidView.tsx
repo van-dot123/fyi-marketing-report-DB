@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import EmptyState from "@/components/EmptyState";
 import { useDateRange } from "@/components/DateRangePicker";
 import { Ga4Day, MetaDay } from "@/lib/realData";
+import { useT } from "@/components/LanguageProvider";
 
 /* ── tokens ─────────────────────────────────────────────────────────── */
 
@@ -162,6 +163,7 @@ function groupBy(rows: MetaDay[], key: (r: MetaDay) => string) {
 
 export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[] }) {
   const { start, end } = useDateRange();
+  const { t } = useT();
   const [filter, setFilter] = useState("All");
   const [metrics, setMetrics] = useState<Metric[]>(["leads"]);
   const [log, setLog] = useState<LogEntry[]>(SEED_LOG);
@@ -263,15 +265,15 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
     return { byDay, available };
   }, [ga4, start, end, filter]);
 
-  const vm = useMemo(() => buildViewModel(meta, days, filter, metrics, log, sess), [meta, days, filter, metrics, log, sess]);
+  const vm = useMemo(() => buildViewModel(meta, days, filter, metrics, log, sess, t), [meta, days, filter, metrics, log, sess, t]);
 
   if (days.length === 0) {
     return (
       <div style={fullBleed}>
         <FontLink />
         <EmptyState
-          title="No paid data in range"
-          message="No FYI Meta campaigns found for the selected dates."
+          title={t("No paid data in range")}
+          message={t("No FYI Meta campaigns found for the selected dates.")}
         />
       </div>
     );
@@ -296,17 +298,17 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
           <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
             <div>
               <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.12em", color: "#94A3B8", marginBottom: 5 }}>
-                Paid Channels · Meta Ads
+                {t("Paid Channels · Meta Ads")}
               </div>
-              <h1 style={{ fontSize: 25, fontWeight: 800, color: "#0F172A", letterSpacing: "-0.025em" }}>FYI Paid Media Report</h1>
+              <h1 style={{ fontSize: 25, fontWeight: 800, color: "#0F172A", letterSpacing: "-0.025em" }}>{t("FYI Paid Media Report")}</h1>
             </div>
             <div style={{ textAlign: "right" }}>
               <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#94A3B8", marginBottom: 4 }}>
-                Lead definition
+                {t("Lead definition")}
               </div>
               <div style={{ display: "inline-flex", alignItems: "center", gap: 7, background: "white", border: "1px solid rgba(0,0,0,0.06)", padding: "6px 12px", borderRadius: 8, boxShadow: "0 1px 2px rgba(0,0,0,0.04)" }}>
                 <div style={{ width: 8, height: 8, borderRadius: "50%", background: vm.leadDefColor }} />
-                <span style={{ fontSize: 12, color: "#64748B" }}>Lead =</span>
+                <span style={{ fontSize: 12, color: "#64748B" }}>{t("Lead =")}</span>
                 <span style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{vm.leadDefLabel}</span>
               </div>
             </div>
@@ -314,7 +316,7 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
 
           {/* filter chips */}
           <div style={{ display: "flex", gap: 7, flexWrap: "wrap", alignItems: "center" }}>
-            <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 600, marginRight: 2 }}>Campaign:</span>
+            <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 600, marginRight: 2 }}>{t("Campaign:")}</span>
             {vm.chips.map((ch) => (
               <div
                 key={ch.key}
@@ -337,13 +339,13 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
                 <div style={{ width: 22, height: 22, borderRadius: 6, background: k.iconBg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                   <div style={{ width: 9, height: 9, borderRadius: k.iconShape, background: k.color }} />
                 </div>
-                <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "#64748B" }}>{k.label}</div>
+                <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "#64748B" }}>{t(k.label)}</div>
               </div>
               <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
                 <span style={{ fontSize: 26, fontWeight: 800, color: k.valColor, letterSpacing: "-0.03em" }}>{k.value}</span>
                 <span style={{ fontSize: 12, fontWeight: 600, color: "#94A3B8" }}>{k.unit}</span>
               </div>
-              <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 5 }}>{k.sub}</div>
+              <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 5 }}>{t(k.sub)}</div>
             </div>
           ))}
         </div>
@@ -352,14 +354,14 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
         <div style={card}>
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 18, flexWrap: "wrap", gap: 12 }}>
             <div>
-              <h2 style={h2}>Daily Trend</h2>
+              <h2 style={h2}>{t("Daily Trend")}</h2>
               <p style={{ fontSize: 11, color: "#94A3B8", marginTop: 2 }}>{vm.trendSub}</p>
             </div>
             <div style={{ display: "flex", gap: 5, alignItems: "center", flexWrap: "wrap" }}>
-              <span style={{ fontSize: 10, color: "#CBD5E1", fontWeight: 700, marginRight: 3 }}>Cost vs</span>
+              <span style={{ fontSize: 10, color: "#CBD5E1", fontWeight: 700, marginRight: 3 }}>{t("Cost vs")}</span>
               {vm.metricBtns.map((m) => (
-                <div key={m.key} onClick={() => !m.disabled && toggleMetric(m.key)} title={m.disabled ? "Not tracked for this campaign" : undefined} style={{ cursor: m.disabled ? "not-allowed" : "pointer", padding: "5px 11px", borderRadius: 7, fontSize: 11, fontWeight: 700, background: m.bg, color: m.color, border: `1px solid ${m.border}`, opacity: m.disabled ? 0.5 : 1, transition: "all .12s" }}>
-                  {m.label}
+                <div key={m.key} onClick={() => !m.disabled && toggleMetric(m.key)} title={m.disabled ? t("Not tracked for this campaign") : undefined} style={{ cursor: m.disabled ? "not-allowed" : "pointer", padding: "5px 11px", borderRadius: 7, fontSize: 11, fontWeight: 700, background: m.bg, color: m.color, border: `1px solid ${m.border}`, opacity: m.disabled ? 0.5 : 1, transition: "all .12s" }}>
+                  {t(m.label)}
                 </div>
               ))}
             </div>
@@ -368,7 +370,7 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
           <div style={{ display: "flex", gap: 18, alignItems: "center", marginBottom: 6, flexWrap: "wrap" }}>
             <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
               <div style={{ width: 14, height: 9, background: "#2563EB", borderRadius: 2, opacity: 0.85 }} />
-              <span style={{ fontSize: 11, color: "#64748B", fontWeight: 600 }}>Cost (₩)</span>
+              <span style={{ fontSize: 11, color: "#64748B", fontWeight: 600 }}>{t("Cost (₩)")}</span>
             </div>
             {vm.legendLines.map((l) => (
               <div key={l.label} style={{ display: "flex", gap: 6, alignItems: "center" }}>
@@ -477,7 +479,7 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
           </div>
 
           <div style={{ display: "flex", flexWrap: "wrap", gap: "7px 14px", marginTop: 14, paddingTop: 14, borderTop: "1px solid #F1F5F9" }}>
-            <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#CBD5E1", alignSelf: "center" }}>Optimization log ↑</span>
+            <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#CBD5E1", alignSelf: "center" }}>{t("Optimization log ↑")}</span>
             {vm.optLegend.map((o) => (
               <div key={o.n} style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <span style={{ width: 16, height: 16, borderRadius: "50%", background: "#0F172A", color: "#fff", fontSize: 9, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{o.n}</span>
@@ -497,11 +499,11 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "150px 1fr 64px 78px 60px 56px", gap: 8, paddingBottom: 9, borderBottom: "1px solid #F1F5F9" }}>
               <span style={th}>{vm.topColHead}</span>
-              <span style={th}>Spend (₩)</span>
-              <span style={{ ...th, textAlign: "right" }}>Leads</span>
-              <span style={{ ...th, textAlign: "center" }}>CP Lead</span>
-              <span style={{ ...th, textAlign: "right" }}>Clicks</span>
-              <span style={{ ...th, textAlign: "right" }}>CTR</span>
+              <span style={th}>{t("Spend (₩)")}</span>
+              <span style={{ ...th, textAlign: "right" }}>{t("Leads")}</span>
+              <span style={{ ...th, textAlign: "center" }}>{t("CP Lead")}</span>
+              <span style={{ ...th, textAlign: "right" }}>{t("Clicks")}</span>
+              <span style={{ ...th, textAlign: "right" }}>{t("CTR")}</span>
             </div>
             {vm.topRows.map((c, i) => (
               <div
@@ -531,7 +533,7 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
               </div>
             ))}
             <div style={{ display: "grid", gridTemplateColumns: "150px 1fr 64px 78px 60px 56px", gap: 8, padding: "12px 4px 0", alignItems: "center" }}>
-              <span style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.05em", color: "#0F172A" }}>Total</span>
+              <span style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.05em", color: "#0F172A" }}>{t("Total")}</span>
               <span style={tot}>{vm.totSpend}</span>
               <span style={{ ...tot, textAlign: "right" }}>{vm.totLeads}</span>
               <span style={{ ...tot, textAlign: "center" }}>{vm.totCpl}</span>
@@ -549,7 +551,7 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
                   <circle key={i} cx="120" cy="100" r="70" fill="none" stroke={d.color} strokeWidth="26" strokeDasharray={d.dash} strokeDashoffset={d.offset} transform="rotate(-90 120 100)" />
                 ))}
                 <text x="120" y="93" textAnchor="middle" style={{ fontSize: 18, fontWeight: 800, fill: "#0F172A", fontFamily: FONT }}>{vm.donutTotal}</text>
-                <text x="120" y="110" textAnchor="middle" style={{ fontSize: 10, fill: "#94A3B8", fontFamily: FONT }}>₩ total</text>
+                <text x="120" y="110" textAnchor="middle" style={{ fontSize: 10, fill: "#94A3B8", fontFamily: FONT }}>{t("₩ total")}</text>
               </svg>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
@@ -574,10 +576,10 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 64px 78px 60px 56px", gap: 10, paddingBottom: 9, borderBottom: "1px solid #F1F5F9" }}>
             <span style={th}>{vm.botColHead}</span>
-            <span style={{ ...th, textAlign: "right" }}>Leads</span>
-            <span style={{ ...th, textAlign: "center" }}>CP Lead</span>
-            <span style={{ ...th, textAlign: "right" }}>Clicks</span>
-            <span style={{ ...th, textAlign: "right" }}>CTR</span>
+            <span style={{ ...th, textAlign: "right" }}>{t("Leads")}</span>
+            <span style={{ ...th, textAlign: "center" }}>{t("CP Lead")}</span>
+            <span style={{ ...th, textAlign: "right" }}>{t("Clicks")}</span>
+            <span style={{ ...th, textAlign: "right" }}>{t("CTR")}</span>
           </div>
           {vm.botRows.map((a, i) => (
             <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 64px 78px 60px 56px", gap: 10, padding: "11px 0", borderBottom: "1px solid #F8FAFC", alignItems: "center" }}>
@@ -605,28 +607,28 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
         <div style={card}>
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 16, gap: 12, flexWrap: "wrap" }}>
             <div>
-              <h2 style={h2}>Audience × Creative</h2>
-              <p style={{ fontSize: 11, color: "#94A3B8", marginTop: 2 }}>Per-creative performance by audience · {vm.audCre.groupCount} groups · {fmt(vm.audCre.totalLeads)} total leads</p>
+              <h2 style={h2}>{t("Audience × Creative")}</h2>
+              <p style={{ fontSize: 11, color: "#94A3B8", marginTop: 2 }}>{t("Per-creative performance by audience")} · {vm.audCre.groupCount} {t("groups")} · {fmt(vm.audCre.totalLeads)} {t("total leads")}</p>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
               <span style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8" }}>CTR:</span>
               {[{ l: "≥1.2%", v: 1.2 }, { l: "≥1.0%", v: 1.0 }, { l: "≥0.8%", v: 0.8 }, { l: "≥0.6%", v: 0.6 }, { l: "<0.6%", v: 0 }].map((c) => {
-                const t = ctrTier(c.v);
-                return <span key={c.l} style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 5, background: t.bg, color: t.color }}>{c.l}</span>;
+                const tier = ctrTier(c.v);
+                return <span key={c.l} style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 5, background: tier.bg, color: tier.color }}>{c.l}</span>;
               })}
             </div>
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: AC_GRID, gap: 8, paddingBottom: 9, borderBottom: "1px solid #F1F5F9" }}>
-            <span style={th}>Creative</span>
-            <span style={th}>Cost</span>
-            <span style={{ ...th, textAlign: "right" }}>Impression</span>
-            <span style={{ ...th, textAlign: "right" }}>Lead</span>
-            <span style={{ ...th, textAlign: "right" }}>CP Lead</span>
-            <span style={{ ...th, textAlign: "right" }}>Click</span>
-            <span style={{ ...th, textAlign: "right" }}>CPC</span>
-            <span style={{ ...th, textAlign: "center" }}>CTR</span>
-            <span style={th}>Note</span>
+            <span style={th}>{t("Creative")}</span>
+            <span style={th}>{t("Cost")}</span>
+            <span style={{ ...th, textAlign: "right" }}>{t("Impression")}</span>
+            <span style={{ ...th, textAlign: "right" }}>{t("Lead")}</span>
+            <span style={{ ...th, textAlign: "right" }}>{t("CP Lead")}</span>
+            <span style={{ ...th, textAlign: "right" }}>{t("Click")}</span>
+            <span style={{ ...th, textAlign: "right" }}>{t("CPC")}</span>
+            <span style={{ ...th, textAlign: "center" }}>{t("CTR")}</span>
+            <span style={th}>{t("Note")}</span>
           </div>
 
           {vm.audCre.groups.map((g, gi) => {
@@ -647,7 +649,7 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
                 {open && (
                   <>
                     {g.creatives.map((c) => {
-                      const t = ctrTier(c.ctrNum);
+                      const tier = ctrTier(c.ctrNum);
                       const nkey = `${g.aud}::${c.key}`;
                       const off = !!acOff[nkey];
                       return (
@@ -666,13 +668,13 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
                           <div style={{ textAlign: "right", fontSize: 12, color: "#64748B" }}>{c.cpl}</div>
                           <div style={{ textAlign: "right", fontSize: 12, color: "#64748B" }}>{c.click}</div>
                           <div style={{ textAlign: "right", fontSize: 12, color: "#64748B" }}>{c.cpc}</div>
-                          <div style={{ textAlign: "center" }}><span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 5, background: t.bg, color: t.color }}>{c.ctrNum.toFixed(2)}%</span></div>
-                          <input value={acNotes[nkey] ?? ""} onChange={(e) => setNote(nkey, e.target.value)} placeholder="+ note..." style={acNoteInput} />
+                          <div style={{ textAlign: "center" }}><span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 5, background: tier.bg, color: tier.color }}>{c.ctrNum.toFixed(2)}%</span></div>
+                          <input value={acNotes[nkey] ?? ""} onChange={(e) => setNote(nkey, e.target.value)} placeholder={t("+ note...")} style={acNoteInput} />
                         </div>
                       );
                     })}
                     <div style={{ display: "grid", gridTemplateColumns: AC_GRID, gap: 8, padding: "10px 0", alignItems: "center", background: "#F8FAFC", borderRadius: 6, borderLeft: `3px solid ${g.color}` }}>
-                      <div style={{ fontSize: 12, fontWeight: 800, color: "#0F172A", paddingLeft: 12 }}>{g.aud} total</div>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: "#0F172A", paddingLeft: 12 }}>{g.aud} {t("total")}</div>
                       <div style={{ fontSize: 12, fontWeight: 800, color: "#0F172A" }}>{gt.cost}</div>
                       <div style={{ textAlign: "right", fontSize: 12, fontWeight: 800, color: "#0F172A" }}>{gt.imp}</div>
                       <div style={{ textAlign: "right", fontSize: 13, fontWeight: 800, color: "#0F172A" }}>{gt.lead}</div>
@@ -680,7 +682,7 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
                       <div style={{ textAlign: "right", fontSize: 12, fontWeight: 800, color: "#0F172A" }}>{gt.click}</div>
                       <div style={{ textAlign: "right", fontSize: 12, fontWeight: 800, color: "#0F172A" }}>{gt.cpc}</div>
                       <div style={{ textAlign: "center" }}><span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 5, background: gtTier.bg, color: gtTier.color }}>{gt.ctrNum.toFixed(2)}%</span></div>
-                      <input value={acNotes[`${g.aud}::__group`] ?? ""} onChange={(e) => setNote(`${g.aud}::__group`, e.target.value)} placeholder="+ group note..." style={acNoteInput} />
+                      <input value={acNotes[`${g.aud}::__group`] ?? ""} onChange={(e) => setNote(`${g.aud}::__group`, e.target.value)} placeholder={t("+ group note...")} style={acNoteInput} />
                     </div>
                   </>
                 )}
@@ -689,7 +691,7 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
           })}
 
           <div style={{ display: "grid", gridTemplateColumns: AC_GRID, gap: 8, padding: "12px 12px", alignItems: "center", background: "#0F172A", borderRadius: 8, marginTop: 10 }}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: "#fff" }}>Total</div>
+            <div style={{ fontSize: 13, fontWeight: 800, color: "#fff" }}>{t("Total")}</div>
             <div style={{ fontSize: 13, fontWeight: 800, color: "#fff" }}>{vm.audCre.grand.cost}</div>
             <div style={{ textAlign: "right", fontSize: 12, fontWeight: 700, color: "#CBD5E1" }}>{vm.audCre.grand.imp}</div>
             <div style={{ textAlign: "right", fontSize: 13, fontWeight: 800, color: "#fff" }}>{vm.audCre.grand.lead}</div>
@@ -705,10 +707,10 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
         <div>
           <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 13, flexWrap: "wrap", gap: 8 }}>
             <div>
-              <h2 style={{ ...h2, display: "inline" }}>Creative Performance</h2>
+              <h2 style={{ ...h2, display: "inline" }}>{t("Creative Performance")}</h2>
               <span style={{ fontSize: 11, color: "#94A3B8", marginLeft: 10 }}>{vm.creativeSub}</span>
             </div>
-            <span style={{ fontSize: 10, color: "#94A3B8", fontFamily: "'JetBrains Mono', monospace", background: "#F1F5F9", padding: "3px 8px", borderRadius: 5 }}>img drops in from image_url</span>
+            <span style={{ fontSize: 10, color: "#94A3B8", fontFamily: "'JetBrains Mono', monospace", background: "#F1F5F9", padding: "3px 8px", borderRadius: 5 }}>{t("img drops in from image_url")}</span>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14 }}>
             {vm.creatives.map((cr, i) => (
@@ -743,7 +745,7 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 7 }}>
                     {[["CP Lead", cr.cpl], ["Leads", cr.leads], ["Spend", cr.spend]].map(([lbl, val]) => (
                       <div key={lbl}>
-                        <div style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: "0.05em", color: "#94A3B8", fontWeight: 700, marginBottom: 2 }}>{lbl}</div>
+                        <div style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: "0.05em", color: "#94A3B8", fontWeight: 700, marginBottom: 2 }}>{t(lbl)}</div>
                         <div style={{ fontSize: 12, fontWeight: 700, color: "#0F172A" }}>{val}</div>
                       </div>
                     ))}
@@ -758,8 +760,8 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
         <div style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 16 }}>
           <div style={card}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
-              <h2 style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.09em", color: "#94A3B8" }}>Optimization Log</h2>
-              <span style={{ fontSize: 11, color: "#CBD5E1" }}>{log.length} entries</span>
+              <h2 style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.09em", color: "#94A3B8" }}>{t("Optimization Log")}</h2>
+              <span style={{ fontSize: 11, color: "#CBD5E1" }}>{log.length} {t("entries")}</span>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
               {vm.logEntries.map((e) => (
@@ -772,13 +774,13 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
             </div>
             <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
               <input type="date" value={draftDate || vm.curE} min={vm.logMin} max={vm.logMax} onChange={(ev) => setDraftDate(ev.target.value)} style={{ border: "1px solid #E2E8F0", borderRadius: 8, padding: "8px 10px", fontSize: 12, color: "#334155", fontFamily: FONT, background: "#fff", flexShrink: 0 }} />
-              <input type="text" value={draftText} onChange={(ev) => setDraftText(ev.target.value)} onKeyDown={(ev) => ev.key === "Enter" && addLog()} placeholder="Add an optimization note" style={{ flex: 1, border: "1px solid #E2E8F0", borderRadius: 8, padding: "8px 12px", fontSize: 13, color: "#334155", fontFamily: FONT, background: "#fff" }} />
-              <div onClick={addLog} style={{ flexShrink: 0, cursor: "pointer", background: "#7C3AED", color: "#fff", fontSize: 13, fontWeight: 700, padding: "8px 16px", borderRadius: 8, display: "flex", alignItems: "center", gap: 5 }}>+ Add</div>
+              <input type="text" value={draftText} onChange={(ev) => setDraftText(ev.target.value)} onKeyDown={(ev) => ev.key === "Enter" && addLog()} placeholder={t("Add an optimization note")} style={{ flex: 1, border: "1px solid #E2E8F0", borderRadius: 8, padding: "8px 12px", fontSize: 13, color: "#334155", fontFamily: FONT, background: "#fff" }} />
+              <div onClick={addLog} style={{ flexShrink: 0, cursor: "pointer", background: "#7C3AED", color: "#fff", fontSize: 13, fontWeight: 700, padding: "8px 16px", borderRadius: 8, display: "flex", alignItems: "center", gap: 5 }}>{t("+ Add")}</div>
             </div>
           </div>
 
           <div style={{ ...card, display: "flex", flexDirection: "column", gap: 10 }}>
-            <h2 style={{ ...h2, marginBottom: 4 }}>Report Insights</h2>
+            <h2 style={{ ...h2, marginBottom: 4 }}>{t("Report Insights")}</h2>
             {MEMOS.map((m) => (
               <div key={m.date} style={{ padding: "12px 14px", background: "#F8FAFC", borderRadius: 8, borderLeft: "3px solid #2563EB" }}>
                 <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#2563EB", marginBottom: 5 }}>{m.date}</div>
@@ -794,7 +796,7 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
 
 /* ── view-model builder ─────────────────────────────────────────────── */
 
-function buildViewModel(meta: MetaDay[], days: MetaDay[], filter: string, metrics: Metric[], log: LogEntry[], sess: { byDay: Map<string, number>; available: boolean }) {
+function buildViewModel(meta: MetaDay[], days: MetaDay[], filter: string, metrics: Metric[], log: LogEntry[], sess: { byDay: Map<string, number>; available: boolean }, t: (s: string) => string) {
   const isAll = filter === "All";
   const sel = filter;
   const selColor = isAll ? "#2563EB" : colorOf(sel);
@@ -825,7 +827,7 @@ function buildViewModel(meta: MetaDay[], days: MetaDay[], filter: string, metric
   const curE = rangeDays[rangeDays.length - 1];
   const rangeLabel = `${fmtDay(curS)} – ${fmtDay(curE)}, 2026 · ${rangeDays.length} days`;
 
-  const leadDefLabel = isAll ? "varies by campaign" : leadDefOf(sel);
+  const leadDefLabel = isAll ? t("varies by campaign") : t(leadDefOf(sel));
   const leadDefColor = isAll ? "#94A3B8" : selColor;
   const headerSub = isAll
     ? `All Meta paid activity · ${rangeLabel} · ${products.length} campaigns`
@@ -854,12 +856,12 @@ function buildViewModel(meta: MetaDay[], days: MetaDay[], filter: string, metric
 
   // KPIs — meta metrics from meta_ad_raw_data_v2; sessions from GA4 by UTM campaign
   const kpis = [
-    { label: "Ad Spend", value: fmt(aSpend), unit: "₩", sub: isAll ? `Across ${products.length} campaigns` : sel, color: "#2563EB", iconBg: "#DBEAFE", iconShape: "3px", cardBg: "#fff", cardBorder: "rgba(0,0,0,0.04)", valColor: "#0F172A" },
+    { label: "Ad Spend", value: fmt(aSpend), unit: "₩", sub: isAll ? `${t("Across")} ${products.length} ${t("campaigns")}` : sel, color: "#2563EB", iconBg: "#DBEAFE", iconShape: "3px", cardBg: "#fff", cardBorder: "rgba(0,0,0,0.04)", valColor: "#0F172A" },
     { label: "Impressions", value: fmt(aImp), unit: "", sub: "Total impressions", color: "#0891B2", iconBg: "#CFFAFE", iconShape: "3px", cardBg: "#fff", cardBorder: "rgba(0,0,0,0.04)", valColor: "#0F172A" },
     { label: "Clicks", value: fmt(aClk), unit: "", sub: "Link clicks", color: "#7C3AED", iconBg: "#EDE9FE", iconShape: "50%", cardBg: "#fff", cardBorder: "rgba(0,0,0,0.04)", valColor: "#0F172A" },
     { label: "CTR", value: aCtr.toFixed(2), unit: "%", sub: "Click-through rate", color: "#D97706", iconBg: "#FEF3C7", iconShape: "50%", cardBg: "#fff", cardBorder: "rgba(0,0,0,0.04)", valColor: "#0F172A" },
     { label: "Sessions", value: sess.available ? fmt(sessionsTotal) : "—", unit: "", sub: sess.available ? "Paid sessions (GA4 · UTM)" : "Not tracked (no website)", color: "#DB2777", iconBg: "#FCE7F3", iconShape: "50%", cardBg: sess.available ? "#fff" : "#FAFAF9", cardBorder: "rgba(0,0,0,0.04)", valColor: sess.available ? "#0F172A" : "#CBD5E1" },
-    { label: "Leads", value: fmt(aConv), unit: "", sub: `Lead = ${leadDefLabel}`, color: "#059669", iconBg: "#DCFCE7", iconShape: "50%", cardBg: "#fff", cardBorder: "rgba(0,0,0,0.04)", valColor: "#0F172A" },
+    { label: "Leads", value: fmt(aConv), unit: "", sub: `${t("Lead =")} ${leadDefLabel}`, color: "#059669", iconBg: "#DCFCE7", iconShape: "50%", cardBg: "#fff", cardBorder: "rgba(0,0,0,0.04)", valColor: "#0F172A" },
     { label: "CP Lead", value: aCpl > 0 ? fmt(aCpl) : "—", unit: "₩", sub: "Cost per lead", color: "#475569", iconBg: "#F1F5F9", iconShape: "3px", cardBg: "#fff", cardBorder: "rgba(0,0,0,0.04)", valColor: "#0F172A" },
   ];
 
@@ -956,11 +958,11 @@ function buildViewModel(meta: MetaDay[], days: MetaDay[], filter: string, metric
     xTicks.push({ x: xAt(i).toFixed(1), label: fmtDay(rangeDays[i]) });
   }
   const metricEmpty = metrics.length > 0 && nonEmpty.length === 0;
-  const labelList = metrics.map((m) => METRICS[m].label.toLowerCase());
-  const trendSub = `${isAll ? "All campaigns" : sel} · daily cost vs ${labelList.length ? labelList.join(", ") : "—"}`;
+  const labelList = metrics.map((m) => t(METRICS[m].label));
+  const trendSub = `${isAll ? t("All campaigns") : sel} · ${t("daily cost vs")} ${labelList.length ? labelList.join(", ") : "—"}`;
   const emptyMsg = metrics.includes("sessions") && !sess.available
-    ? `Sessions not tracked for ${sel} (no website tracking)`
-    : "App install tracking not yet wired";
+    ? `${t("Sessions not tracked for")} ${sel} ${t("(no website tracking)")}`
+    : t("App install tracking not yet wired");
 
   // top table
   const mkRow = (name: string, color: string, leadType: string, o: Agg, maxV: number, clickable: boolean, rowBg = "transparent") => {
@@ -987,9 +989,9 @@ function buildViewModel(meta: MetaDay[], days: MetaDay[], filter: string, metric
 
   const topRows = isAll ? campaignRows : adsetRows;
 
-  const topTitle = isAll ? "Campaign Performance" : `Ad Set Performance — ${sel}`;
-  const topSub = isAll ? `${products.length} campaigns · click a row to filter` : `${adsetData.length} ad sets · click the All chip to reset`;
-  const topColHead = isAll ? "Campaign" : "Ad Set";
+  const topTitle = isAll ? t("Campaign Performance") : `${t("Ad Set Performance")} — ${sel}`;
+  const topSub = isAll ? `${products.length} ${t("campaigns · click a row to filter")}` : `${adsetData.length} ${t("ad sets · click the All chip to reset")}`;
+  const topColHead = isAll ? t("Campaign") : t("Ad Set");
 
   const totSpend = fmt(aSpend), totLeads = fmt(aConv), totClicks = fmt(aClk);
   const totCpl = aCpl > 0 ? fmt(aCpl) : "—", totCtr = aCtr.toFixed(2);
@@ -1010,7 +1012,7 @@ function buildViewModel(meta: MetaDay[], days: MetaDay[], filter: string, metric
   });
   const donutTotal = mixTotal >= 1000000 ? `${(mixTotal / 1000000).toFixed(2)}M` : `${Math.round(mixTotal / 1000)}K`;
   const spendLegend = mixItems.slice(0, 8).map((it) => ({ name: it.name, color: it.color, pct: `${mixTotal > 0 ? ((it.spend / mixTotal) * 100).toFixed(1) : "0.0"}%` }));
-  const mixTitle = isAll ? "Spend Mix" : "Ad Set Mix";
+  const mixTitle = isAll ? t("Spend Mix") : t("Ad Set Mix");
 
   // creatives
   const imgByCre = new Map<string, string>();
@@ -1033,7 +1035,7 @@ function buildViewModel(meta: MetaDay[], days: MetaDay[], filter: string, metric
       perfLabel: perf.l, perfColor: perf.c,
     };
   });
-  const creativeSub = `${isAll ? "All campaigns" : sel} · ${creList.length} creatives · sorted by CTR (high → low)`;
+  const creativeSub = `${isAll ? t("All campaigns") : sel} · ${creList.length} ${t("creatives · sorted by CTR (high → low)")}`;
 
   // bottom breakdown
   const botSrc = (isAll ? groupBy(days, (r) => r.audience) : groupBy(selRows, (r) => r.adName)).slice(0, 8);
@@ -1049,9 +1051,9 @@ function buildViewModel(meta: MetaDay[], days: MetaDay[], filter: string, metric
       leads: fmt(a.lead), cpl: cpl > 0 ? fmt(cpl) : "—", cplBg: cs.bg, cplColor: cs.color, clicks: fmt(a.clk), ctr: ctr.toFixed(2), ctrColor: ctrCol(ctr),
     };
   });
-  const botTitle = isAll ? "Audience Breakdown" : `Creative Breakdown — ${sel}`;
-  const botColHead = isAll ? "Audience · Spend (₩)" : "Creative · Spend (₩)";
-  const botSub = isAll ? `${botRows.length} audiences across all campaigns` : `${botRows.length} creatives in ${sel}`;
+  const botTitle = isAll ? t("Audience Breakdown") : `${t("Creative Breakdown")} — ${sel}`;
+  const botColHead = isAll ? t("Audience · Spend (₩)") : t("Creative · Spend (₩)");
+  const botSub = isAll ? `${botRows.length} ${t("audiences across all campaigns")}` : `${botRows.length} ${t("creatives in")} ${sel}`;
 
   // optimization log
   const logSorted = [...log].sort((a, b) => b.date.localeCompare(a.date));
