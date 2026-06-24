@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useT } from "@/components/LanguageProvider";
 import {
   LayoutDashboard,
   Megaphone,
@@ -29,6 +30,7 @@ const navItems: NavItem[] = [
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const { t } = useT();
 
   return (
     <aside className="flex h-full w-60 flex-col bg-[#1a1a2e] px-4 py-6 text-slate-300">
@@ -55,14 +57,14 @@ export default function Sidebar() {
               ].join(" ")}
             >
               <Icon className="h-5 w-5" />
-              {label}
+              {t(label)}
             </Link>
           );
         })}
       </nav>
 
       <div className="mt-auto px-3 text-xs text-slate-500">
-        FYI Vietnam · 2026
+        {t("FYI Vietnam · 2026")}
       </div>
     </aside>
   );

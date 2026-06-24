@@ -1,6 +1,7 @@
 "use client";
 
 import { Ga4Day, MetaDay } from "@/lib/realData";
+import { useT } from "@/components/LanguageProvider";
 
 /* ── tokens ─────────────────────────────────────────────────────────── */
 
@@ -67,6 +68,7 @@ function dod(cur: number, prev: number): number | null {
 /* ── component ──────────────────────────────────────────────────────── */
 
 export default function DailyReportView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[] }) {
+  const { t, lang } = useT();
   const dates = [...new Set(meta.map((r) => r.date))].sort();
 
   if (dates.length === 0) {
@@ -74,7 +76,7 @@ export default function DailyReportView({ meta, ga4 }: { meta: MetaDay[]; ga4: G
       <div style={fullBleed}>
         <FontLink />
         <div style={{ maxWidth: 1480, margin: "0 auto" }}>
-          <div style={card}>No Meta data available.</div>
+          <div style={card}>{t("No Meta data available.")}</div>
         </div>
       </div>
     );
@@ -159,17 +161,17 @@ export default function DailyReportView({ meta, ga4 }: { meta: MetaDay[]; ga4: G
         {/* HEADER */}
         <div>
           <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.12em", color: "#94A3B8", marginBottom: 5 }}>
-            Daily Report · Meta Ads
+            {t("Daily Report · Meta Ads")}
           </div>
-          <h1 style={{ fontSize: 25, fontWeight: 800, color: "#0F172A", letterSpacing: "-0.025em" }}>FYI Daily Performance</h1>
+          <h1 style={{ fontSize: 25, fontWeight: 800, color: "#0F172A", letterSpacing: "-0.025em" }}>{t("FYI Daily Performance")}</h1>
           <p style={{ fontSize: 12, color: "#94A3B8", marginTop: 3 }}>
-            All Meta campaigns · {fmtDate(reportDay)} · DoD vs {fmtDate(prevDay)} · Ad Spend is month-to-date
+            {t("All Meta campaigns")} · {fmtDate(reportDay)} · {t("DoD vs")} {fmtDate(prevDay)} · {t("Ad Spend is month-to-date")}
           </p>
         </div>
 
         {/* OVERVIEW */}
         <div style={card}>
-          <h2 style={{ ...h2, marginBottom: 14 }}>Overview</h2>
+          <h2 style={{ ...h2, marginBottom: 14 }}>{t("Overview")}</h2>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 13 }}>
             {overviewKpis.map((k) => <Kpi key={k.label} {...k} />)}
           </div>
@@ -197,7 +199,7 @@ export default function DailyReportView({ meta, ga4 }: { meta: MetaDay[]; ga4: G
               <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 14 }}>
                 <div style={{ width: 9, height: 9, borderRadius: 2, background: colorOf(p) }} />
                 <h2 style={h2}>{p}</h2>
-                <span style={{ fontSize: 11, color: "#94A3B8" }}>lead = {leadLabel.toLowerCase()}</span>
+                <span style={{ fontSize: 11, color: "#94A3B8" }}>{t("lead =")} {lang === "en" ? leadLabel.toLowerCase() : t(leadLabel)}</span>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(6,1fr)", gap: 11, marginBottom: 14 }}>
                 {kpis.map((k) => <Kpi key={k.label} compact {...k} />)}
@@ -230,6 +232,7 @@ interface KpiProps {
 }
 
 function Kpi({ label, value, unit, sub, dodPct, tone, color, iconBg, shape, compact }: KpiProps) {
+  const { t } = useT();
   const flat = dodPct === null || Math.abs(dodPct) < 0.5;
   const up = dodPct !== null && dodPct > 0;
   let badgeColor = "#94A3B8";
@@ -243,14 +246,14 @@ function Kpi({ label, value, unit, sub, dodPct, tone, color, iconBg, shape, comp
         <div style={{ width: 20, height: 20, borderRadius: 6, background: iconBg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
           <div style={{ width: 8, height: 8, borderRadius: shape, background: color }} />
         </div>
-        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#64748B" }}>{label}</div>
+        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#64748B" }}>{t(label)}</div>
       </div>
       <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
         <span style={{ fontSize: compact ? 21 : 26, fontWeight: 800, color: "#0F172A", letterSpacing: "-0.03em" }}>{value}</span>
         <span style={{ fontSize: 12, fontWeight: 600, color: "#94A3B8" }}>{unit}</span>
       </div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, marginTop: 5 }}>
-        <span style={{ fontSize: 10, color: "#94A3B8" }}>{sub}</span>
+        <span style={{ fontSize: 10, color: "#94A3B8" }}>{t(sub)}</span>
         <span style={{ fontSize: 11, fontWeight: 700, color: badgeColor }}>{badge}</span>
       </div>
     </div>
@@ -258,6 +261,7 @@ function Kpi({ label, value, unit, sub, dodPct, tone, color, iconBg, shape, comp
 }
 
 function TopCard({ title, pick, color }: { title: string; pick: { name: string; lead: number; ctr: number; dodPct: number | null } | null; color: string }) {
+  const { t } = useT();
   const flat = pick?.dodPct === null || (pick && Math.abs(pick.dodPct!) < 0.5);
   const up = pick?.dodPct != null && pick.dodPct > 0;
   const badgeColor = pick?.dodPct == null ? "#94A3B8" : flat ? "#94A3B8" : up ? "#059669" : "#DC2626";
@@ -265,20 +269,20 @@ function TopCard({ title, pick, color }: { title: string; pick: { name: string; 
   return (
     <div style={{ background: "#F8FAFC", borderRadius: 10, padding: "12px 14px", borderLeft: `3px solid ${color}` }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-        <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "#94A3B8" }}>{title}</span>
-        <span style={{ fontSize: 9, color: "#CBD5E1" }}>MTD · vs prior period</span>
+        <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "#94A3B8" }}>{t(title)}</span>
+        <span style={{ fontSize: 9, color: "#CBD5E1" }}>{t("MTD · vs prior period")}</span>
       </div>
       {pick ? (
         <>
           <div style={{ fontSize: 14, fontWeight: 700, color: "#0F172A", marginBottom: 5 }}>{pick.name}</div>
           <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
-            <span style={{ fontSize: 11, color: "#64748B" }}>Leads <b style={{ color: "#0F172A" }}>{fmt(pick.lead)}</b></span>
+            <span style={{ fontSize: 11, color: "#64748B" }}>{t("Leads")} <b style={{ color: "#0F172A" }}>{fmt(pick.lead)}</b></span>
             <span style={{ fontSize: 11, fontWeight: 700, color: badgeColor }}>{badge}</span>
-            <span style={{ fontSize: 11, color: "#64748B" }}>CTR <b style={{ color: "#0F172A" }}>{pick.ctr.toFixed(2)}%</b></span>
+            <span style={{ fontSize: 11, color: "#64748B" }}>{t("CTR")} <b style={{ color: "#0F172A" }}>{pick.ctr.toFixed(2)}%</b></span>
           </div>
         </>
       ) : (
-        <div style={{ fontSize: 13, color: "#CBD5E1" }}>No data this month</div>
+        <div style={{ fontSize: 13, color: "#CBD5E1" }}>{t("No data this month")}</div>
       )}
     </div>
   );
