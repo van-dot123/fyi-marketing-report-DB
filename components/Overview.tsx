@@ -22,6 +22,7 @@ import { NOTE_EXCLUDE_COMPANY, NOTE_EXCLUDE_EMAIL, runWithInternalFilter, supaba
 import { Ga4Day, MetaDay, SnsPostRow } from "@/lib/realData";
 import { PLATFORM_COLORS, filterByCampaign, inRange, metaTotals, paidCreatives, trafficTotals } from "@/lib/aggregate";
 import { formatKRW, formatNumber, formatPercent, formatPeriod } from "@/lib/format";
+import { useT } from "@/components/LanguageProvider";
 
 const TARGETS_KEY = "fyi-monthly-targets";
 const LOG_TABS = ["All", "Paid", "SNS"];
@@ -183,14 +184,15 @@ function useLocalStorage<T>(key: string, initial: T): [T, (v: T) => void] {
 }
 
 function Card({ label, link, children }: { label?: string; link?: { href: string; text: string }; children: ReactNode }) {
+  const { t } = useT();
   return (
     <div className="rounded-lg bg-white" style={{ border: "0.5px solid #e2e8f0", padding: "11px 13px" }}>
       {label && (
         <div className="mb-2.5 flex items-center justify-between">
-          <p className="text-[10px] font-medium uppercase tracking-[0.06em] text-slate-400">{label}</p>
+          <p className="text-[10px] font-medium uppercase tracking-[0.06em] text-slate-400">{t(label)}</p>
           {link && (
             <Link href={link.href} className="text-[11px] font-medium text-purple-600 hover:text-purple-700">
-              {link.text} →
+              {t(link.text)} →
             </Link>
           )}
         </div>
@@ -201,7 +203,8 @@ function Card({ label, link, children }: { label?: string; link?: { href: string
 }
 
 function Wow({ value, previous, periodLabel }: { value: number | null; previous: number | null; periodLabel: string }) {
-  if (value === null || previous === null || previous === 0) return <p className="mt-0.5 text-[10px] text-slate-300">vs {periodLabel}</p>;
+  const { t } = useT();
+  if (value === null || previous === null || previous === 0) return <p className="mt-0.5 text-[10px] text-slate-300">{t("vs")} {periodLabel}</p>;
   const pct = (value - previous) / previous;
   const up = pct >= 0;
   return (
@@ -219,6 +222,7 @@ interface Seg {
 }
 
 function DonutTooltip({ active, payload, coordinate }: any) {
+  const { t } = useT();
   if (!active || !payload || !payload.length) return null;
   const seg = payload[0].payload as Seg;
   const total = (seg.rows ?? []).reduce((a: number, r: { value: number }) => a + r.value, 0);
@@ -237,10 +241,10 @@ function DonutTooltip({ active, payload, coordinate }: any) {
         boxShadow: "0 2px 8px rgba(15,23,42,0.08)",
       }}
     >
-      <p className="mb-1 font-medium text-slate-700">{seg.name}</p>
+      <p className="mb-1 font-medium text-slate-700">{t(seg.name)}</p>
       {(seg.rows ?? []).map((r) => (
         <div key={r.name} className="flex justify-between gap-4">
-          <span className="text-slate-500">{r.name}</span>
+          <span className="text-slate-500">{t(r.name)}</span>
           <span className="font-bold tabular-nums text-slate-800">
             {formatNumber(r.value)} · {total ? Math.round((r.value / total) * 100) : 0}%
           </span>
@@ -251,6 +255,7 @@ function DonutTooltip({ active, payload, coordinate }: any) {
 }
 
 function DonutBlock({ data, total }: { data: Seg[]; total: number }) {
+  const { t } = useT();
   return (
     <div>
       <div className="mx-auto" style={{ width: 120, height: 120 }}>
@@ -269,7 +274,7 @@ function DonutBlock({ data, total }: { data: Seg[]; total: number }) {
         {data.map((d) => (
           <div key={d.name} className="flex items-center gap-2 text-[11px]">
             <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: d.color }} />
-            <span className="flex-1 text-slate-500">{d.name}</span>
+            <span className="flex-1 text-slate-500">{t(d.name)}</span>
             <span className="font-medium tabular-nums text-slate-700">
               {formatNumber(d.value)} · {total ? ((d.value / total) * 100).toFixed(0) : 0}%
             </span>
@@ -282,6 +287,7 @@ function DonutBlock({ data, total }: { data: Seg[]; total: number }) {
 
 export default function Overview({ meta, ga4, sns, missingKey }: { meta: MetaDay[]; ga4: Ga4Day[]; sns: SnsPostRow[]; missingKey: boolean }) {
   const { start, end, previousStart, previousEnd } = useDateRange();
+  const { t: tr } = useT();
   const periodLabel = formatPeriod(previousStart, previousEnd);
 
   const days = useMemo(() => inRange(meta, start, end), [meta, start, end]);
@@ -497,7 +503,7 @@ export default function Overview({ meta, ga4, sns, missingKey }: { meta: MetaDay
       {missingKey && (
         <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           <AlertTriangle className="h-4 w-4 shrink-0" />
-          GOOGLE_SHEETS_API_KEY is missing — live data may be unavailable.
+          {tr("GOOGLE_SHEETS_API_KEY is missing — live data may be unavailable.")}
         </div>
       )}
 
@@ -514,7 +520,7 @@ export default function Overview({ meta, ga4, sns, missingKey }: { meta: MetaDay
                 return (
                   <div key={b.key}>
                     <div className="mb-1 flex items-center justify-between text-[11px]">
-                      <span className="text-slate-500">{b.key}</span>
+                      <span className="text-slate-500">{tr(b.key)}</span>
                       <span className="font-medium tabular-nums text-slate-700">
                         {formatNumber(b.actual)} / {formatNumber(target)}
                       </span>
@@ -535,7 +541,7 @@ export default function Overview({ meta, ga4, sns, missingKey }: { meta: MetaDay
             <div className="grid grid-cols-4" style={{ gap: 10 }}>
               {metrics.map((m) => (
                 <div key={m.label} className="rounded-md bg-slate-50" style={{ padding: "9px 11px" }}>
-                  <p className="text-[11px] text-slate-400">{m.label}</p>
+                  <p className="text-[11px] text-slate-400">{tr(m.label)}</p>
                   <p className="mt-0.5 text-[18px] font-medium leading-tight text-slate-900">{m.value === null ? "—" : m.fmt(m.value)}</p>
                   <Wow value={m.value} previous={m.prev} periodLabel={periodLabel} />
                   {m.note && <p className="mt-0.5 text-[10px] italic text-slate-400">{m.note}</p>}
@@ -553,9 +559,9 @@ export default function Overview({ meta, ga4, sns, missingKey }: { meta: MetaDay
                   <YAxis yAxisId="left" tickLine={false} axisLine={false} tick={{ fill: "#94a3b8", fontSize: 10 }} />
                   <YAxis yAxisId="right" orientation="right" tickLine={false} axisLine={false} tick={{ fill: "#94a3b8", fontSize: 10 }} />
                   <Tooltip labelFormatter={(d) => fmtTick(Number(d))} contentStyle={{ borderRadius: 8, border: "0.5px solid #e2e8f0", fontSize: 11 }} />
-                  <Bar yAxisId="left" dataKey="spend" name="Spend" fill="#cbd5e1" radius={[3, 3, 0, 0]} barSize={12} />
-                  <Line yAxisId="right" type="monotone" dataKey="submissions" name="Submissions" stroke="#7c3aed" strokeWidth={2} dot={false} />
-                  <Line yAxisId="right" type="monotone" dataKey="jobApps" name="Job apps" stroke="#14b8a6" strokeWidth={2} strokeDasharray="5 4" dot={false} />
+                  <Bar yAxisId="left" dataKey="spend" name={tr("Spend")} fill="#cbd5e1" radius={[3, 3, 0, 0]} barSize={12} />
+                  <Line yAxisId="right" type="monotone" dataKey="submissions" name={tr("Submissions")} stroke="#7c3aed" strokeWidth={2} dot={false} />
+                  <Line yAxisId="right" type="monotone" dataKey="jobApps" name={tr("Job apps")} stroke="#14b8a6" strokeWidth={2} strokeDasharray="5 4" dot={false} />
                   {rangeNotes.map((n, i) => (
                     <ReferenceLine key={`${n.date}-${i}`} yAxisId="left" x={dayMs(n.date)} stroke={TYPE_COLOR[n.type] ?? "#94a3b8"} strokeDasharray="4 4" />
                   ))}
@@ -599,7 +605,7 @@ export default function Overview({ meta, ga4, sns, missingKey }: { meta: MetaDay
             </div>
             {sortedLogs.length > 5 && (
               <button onClick={() => setShowAllLogs(!showAllLogs)} className="mt-2.5 text-[11px] font-medium text-purple-600 hover:text-purple-700">
-                {showAllLogs ? "Show less" : "See more"}
+                {showAllLogs ? tr("Show less") : tr("See more")}
               </button>
             )}
           </Card>
@@ -610,10 +616,10 @@ export default function Overview({ meta, ga4, sns, missingKey }: { meta: MetaDay
             <table className="w-full text-xs">
               <thead>
                 <tr className="text-left text-[10px] font-medium uppercase tracking-[0.06em] text-slate-400">
-                  <th className="pb-2 font-medium">KPI</th>
-                  <th className="pb-2 text-right font-medium">Target</th>
-                  <th className="pb-2 text-right font-medium">Actual</th>
-                  <th className="pb-2 text-right font-medium">Ach.</th>
+                  <th className="pb-2 font-medium">{tr("KPI")}</th>
+                  <th className="pb-2 text-right font-medium">{tr("Target")}</th>
+                  <th className="pb-2 text-right font-medium">{tr("Actual")}</th>
+                  <th className="pb-2 text-right font-medium">{tr("Ach.")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -623,7 +629,7 @@ export default function Overview({ meta, ga4, sns, missingKey }: { meta: MetaDay
                   const pct = achievement(actual, target, kpi.lowerBetter);
                   return (
                     <tr key={kpi.key} className={i % 2 === 1 ? "bg-slate-50" : ""}>
-                      <td className="py-1.5 text-slate-700">{kpi.key}</td>
+                      <td className="py-1.5 text-slate-700">{tr(kpi.key)}</td>
                       <td className="py-1.5 text-right">
                         <input
                           type="number"
@@ -661,7 +667,7 @@ export default function Overview({ meta, ga4, sns, missingKey }: { meta: MetaDay
                 return (
                   <div key={stage.label}>
                     <div className="flex items-center gap-2">
-                      <span className="w-24 shrink-0 text-[11px] text-slate-500">{stage.label}</span>
+                      <span className="w-24 shrink-0 text-[11px] text-slate-500">{tr(stage.label)}</span>
                       <div className="h-1.5 flex-1 rounded-full bg-slate-100">
                         <div className="h-1.5 rounded-full bg-purple-600" style={{ width: `${((stage.value / funnelMax) * 100).toFixed(1)}%` }} />
                       </div>
@@ -682,8 +688,8 @@ export default function Overview({ meta, ga4, sns, missingKey }: { meta: MetaDay
             <div className="space-y-3">
               <div>
                 <div className="mb-1 flex items-center justify-between">
-                  <p className="text-[11px] font-medium text-slate-600">Best paid creative</p>
-                  <Link href="/paid" className="text-[10px] font-medium text-purple-600 hover:text-purple-700">View all →</Link>
+                  <p className="text-[11px] font-medium text-slate-600">{tr("Best paid creative")}</p>
+                  <Link href="/paid" className="text-[10px] font-medium text-purple-600 hover:text-purple-700">{tr("View all")} →</Link>
                 </div>
                 {bestCreative ? (
                   <div className="rounded-md bg-slate-50 px-3 py-2">

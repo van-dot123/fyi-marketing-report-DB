@@ -10,6 +10,7 @@ import {
   ReactNode,
 } from "react";
 import { Calendar, ChevronLeft, ChevronRight, ChevronDown } from "lucide-react";
+import { useT } from "@/components/LanguageProvider";
 
 const TODAY = "2026-06-23";
 // Default landing range = the most recent 2 weeks (14 days) of data.
@@ -179,6 +180,7 @@ function MonthView({
   draftEnd: string;
   onPick: (iso: string) => void;
 }) {
+  const { t } = useT();
   // 7 columns × 36px = 252px fixed width; cells fill their grid track exactly.
   const GRID = { gridTemplateColumns: "repeat(7, 1fr)" } as const;
   return (
@@ -189,7 +191,7 @@ function MonthView({
       <div className="grid text-center text-xs text-slate-400" style={GRID}>
         {WEEKDAYS.map((d) => (
           <div key={d} className="py-1">
-            {d}
+            {t(d)}
           </div>
         ))}
       </div>
@@ -243,6 +245,7 @@ function MonthView({
 
 export default function DateRangePicker() {
   const { start, end, setRange } = useDateRange();
+  const { t } = useT();
   const presets = useMemo(buildPresets, []);
 
   const [open, setOpen] = useState(false);
@@ -336,7 +339,7 @@ export default function DateRangePicker() {
                         p.custom ? "cursor-default" : "",
                       ].join(" ")}
                     >
-                      <span className="block">{p.label}</span>
+                      <span className="block">{t(p.label)}</span>
                       {p.sub && (
                         <span className={["mt-0.5 block text-[11px] font-normal", isActive ? "text-purple-500" : "text-slate-400"].join(" ")}>
                           {p.sub}
@@ -410,14 +413,14 @@ export default function DateRangePicker() {
                 onClick={() => setOpen(false)}
                 className="rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100"
               >
-                Cancel
+                {t("Cancel")}
               </button>
               <button
                 onClick={apply}
                 disabled={!draftStart}
                 className="rounded-lg bg-purple-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-purple-700 disabled:opacity-50"
               >
-                Apply
+                {t("Apply")}
               </button>
             </div>
           </div>
