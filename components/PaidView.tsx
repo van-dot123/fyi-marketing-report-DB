@@ -576,6 +576,8 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
           </div>
         </div>
 
+        <CampaignOverview meta={meta} filter={filter} />
+
         {/* AUDIENCE / CREATIVE BREAKDOWN */}
         <div style={card}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
@@ -1129,6 +1131,292 @@ function buildViewModel(meta: MetaDay[], days: MetaDay[], filter: string, metric
     donutSegs, donutTotal, spendLegend, mixTitle,
     creatives, creativeSub, botRows, botTitle, botSub, botColHead, logEntries, audCre,
   };
+}
+
+/* ── Campaign Overview (plan vs actuals) ────────────────────────────── */
+
+interface CoAgg { spend: number; clk: number; imp: number; lead: number; }
+interface CoTarget { start?: string; end?: string; plan?: string; leads?: string; cpl?: string; ctr?: string; }
+type CoTargets = Record<string, CoTarget>;
+
+const CO_OBJ: Record<string, string> = {
+  April: "MT-lead", "Talent-Pool": "MT-lead", "Job-page": "MT-lead",
+  Mentoring: "MT-lead", "K-Tuvi": "MT-lead", "Launch-App": "MT-Install",
+  "May-Hackathon": "MT-lead", CVReg: "MT-lead",
+};
+
+// Suggested defaults; "Reset targets" re-seeds these. Unknown campaigns are
+// estimated from their own actuals.
+const CO_SEED: CoTargets = {
+  April: { plan: "650232", leads: "2709", cpl: "240", ctr: "1.0", start: "2026-04-20", end: "2026-05-31" },
+  CVReg: { plan: "105000", leads: "105", cpl: "1000", ctr: "1.2", start: "2026-06-21", end: "2026-07-20" },
+  "Job-page": { plan: "210000", leads: "300", cpl: "700", ctr: "0.8", start: "2026-05-19", end: "2026-06-30" },
+  "Launch-App": { plan: "150000", leads: "75", cpl: "2000", ctr: "0.5", start: "2026-06-18", end: "2026-07-22" },
+};
+
+const CO_PILL = {
+  good: { bg: "#DCFCE7", color: "#166534" },
+  warn: { bg: "#FEF3C7", color: "#92400E" },
+  bad: { bg: "#FEE2E2", color: "#991B1B" },
+  none: { bg: "#F1F5F9", color: "#CBD5E1" },
+};
+
+const CO_GRID = "minmax(190px,1.3fr) 60px 116px 116px 70px 94px 66px 72px 60px 94px 62px 72px 60px 62px 62px 62px 62px";
+
+const coDateInput: React.CSSProperties = { width: "100%", boxSizing: "border-box", border: "1px solid #FCD34D", borderRadius: 6, padding: "5px 5px", fontSize: 10.5, fontWeight: 600, color: "#0F172A", background: "#FFFBEB", fontFamily: FONT };
+const coNumInput: React.CSSProperties = { width: "100%", boxSizing: "border-box", border: "1px solid #FCD34D", borderRadius: 6, padding: "5px 6px", fontSize: 11.5, fontWeight: 700, textAlign: "right", color: "#0F172A", background: "#FFFBEB", fontFamily: FONT };
+// Group thousands for display in editable number cells (e.g. "650232" → "650,232").
+const coGroupNum = (s?: string) => { const n = String(s ?? "").replace(/[^\d]/g, ""); return n ? Number(n).toLocaleString("en-US") : ""; };
+const coTileLabel: React.CSSProperties = { fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#94A3B8", marginBottom: 7 };
+const coTileVal: React.CSSProperties = { fontSize: 23, fontWeight: 800, color: "#0F172A", letterSpacing: "-0.03em" };
+const coTileUnit: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: "#94A3B8" };
+
+const coGroupCell = (color: string, bg: string, border: string): React.CSSProperties => ({ textAlign: "center", fontSize: 9, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em", color, background: bg, borderBottom: `2px solid ${border}`, borderRadius: "6px 6px 0 0", padding: "5px 0" });
+const coTh = (color: string, align: React.CSSProperties["textAlign"] = "left"): React.CSSProperties => ({ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color, textAlign: align });
+const coPillStyle = (p: { bg: string; color: string }): React.CSSProperties => ({ display: "inline-block", minWidth: 48, textAlign: "center", fontSize: 11, fontWeight: 800, padding: "3px 6px", borderRadius: 6, background: p.bg, color: p.color });
+
+function coSeedTargets(products: string[], lt: Record<string, CoAgg>, firstDay: Record<string, string>): CoTargets {
+  const out: CoTargets = {};
+  const round = (n: number, step: number) => step * Math.round(n / step);
+  for (const p of products) {
+    if (CO_SEED[p]) { out[p] = { ...CO_SEED[p] }; continue; }
+    const o = lt[p]; const conv = o.lead;
+    const cpl = conv > 0 ? o.spend / conv : 0;
+    const ctr = o.imp > 0 ? (o.clk / o.imp) * 100 : 0;
+    out[p] = {
+      start: firstDay[p] || "2026-04-20", end: "2026-07-15",
+      plan: String(round(o.spend * 1.1, 1000) || 0),
+      leads: String(Math.max(1, Math.round(conv * 1.15))),
+      cpl: String(Math.round(cpl * 0.9) || 0),
+      ctr: (ctr * 0.9).toFixed(1),
+    };
+  }
+  return out;
+}
+
+// Plan-vs-actuals planning table. Actuals come from lifetime ad data (all dates,
+// deliberately ignoring the page date filter — plan budget is a whole-campaign
+// total). Targets/schedule are user-entered and persisted in localStorage.
+function CampaignOverview({ meta, filter }: { meta: MetaDay[]; filter: string }) {
+  const { t } = useT();
+  const [targets, setTargets] = useState<CoTargets | null>(null);
+
+  const { products, lt, firstDay } = useMemo(() => {
+    const lt: Record<string, CoAgg> = {};
+    const firstDay: Record<string, string> = {};
+    for (const r of meta) {
+      if (!r.product) continue;
+      let o = lt[r.product];
+      if (!o) lt[r.product] = o = { spend: 0, clk: 0, imp: 0, lead: 0 };
+      o.spend += r.spend; o.clk += r.clicks; o.imp += r.impressions; o.lead += r.leads;
+      if (r.date && (!firstDay[r.product] || r.date < firstDay[r.product])) firstDay[r.product] = r.date;
+    }
+    const products = Object.keys(lt).sort((a, b) => lt[b].spend - lt[a].spend);
+    return { products, lt, firstDay };
+  }, [meta]);
+
+  useEffect(() => {
+    if (products.length === 0) return;
+    let saved: CoTargets | null = null;
+    try { const s = localStorage.getItem("fyi_co_targets_v2"); saved = s ? JSON.parse(s) : null; } catch { /* ignore */ }
+    setTargets(saved ?? coSeedTargets(products, lt, firstDay));
+  }, [products, lt, firstDay]);
+
+  const setTarget = (name: string, field: keyof CoTarget, val: string) => {
+    setTargets((prev) => {
+      const next: CoTargets = { ...(prev || {}), [name]: { ...(prev?.[name] || {}), [field]: val } };
+      try { localStorage.setItem("fyi_co_targets_v2", JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  };
+  const resetTargets = () => {
+    const next = coSeedTargets(products, lt, firstDay);
+    setTargets(next);
+    try { localStorage.setItem("fyi_co_targets_v2", JSON.stringify(next)); } catch { /* ignore */ }
+  };
+
+  if (products.length === 0 || !targets) return null;
+
+  const isAll = filter === "All";
+  const coProds = isAll ? products : products.filter((p) => p === filter);
+
+  const numv = (v?: string) => { const n = parseFloat(String(v ?? "").replace(/,/g, "")); return isFinite(n) ? n : 0; };
+  const fmtPct = (v: number | null) => (v == null ? "—" : v.toFixed(1) + "%");
+  // Quantity metrics (leads, CTR): green at/above target, red below.
+  // Cost metrics (budget, CPL): green at/under target, red above. Neutral when no target.
+  const hitPill = (pct: number | null) => (pct == null ? CO_PILL.none : pct >= 100 ? CO_PILL.good : CO_PILL.bad);
+  const budgetPill = (pct: number | null) => (pct == null ? CO_PILL.none : pct <= 100 ? CO_PILL.good : CO_PILL.bad);
+  const cplPill = (pct: number | null) => (pct == null ? CO_PILL.none : pct <= 100 ? CO_PILL.good : CO_PILL.bad);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const remainOf = (end?: string) => { if (!end) return null; const e = new Date(end + "T00:00:00"); if (isNaN(e.getTime())) return null; return Math.round((e.getTime() - today.getTime()) / 86400000); };
+
+  let coPlan = 0, coSpend = 0, coTLeads = 0, coALeads = 0, coTSpendForCpl = 0, coAConvForCpl = 0, coOnPace = 0, coSet = 0, coCplTW = 0, coCplSP = 0;
+
+  const rows = coProds.map((p) => {
+    const o = lt[p]; const cv = o.lead;
+    const aSpend = o.spend, aLeads = cv, aCpl = cv > 0 ? o.spend / cv : 0, aCtr = o.imp > 0 ? (o.clk / o.imp) * 100 : 0;
+    const tt = targets[p] || {}; const plan = numv(tt.plan), tL = numv(tt.leads), tC = numv(tt.cpl), tR = numv(tt.ctr);
+    const pB = plan > 0 ? (aSpend / plan) * 100 : null;
+    const pL = tL > 0 ? (aLeads / tL) * 100 : null;
+    const pC = tC > 0 && aCpl > 0 ? (aCpl / tC) * 100 : null;
+    const pR = tR > 0 ? (aCtr / tR) * 100 : null;
+    coPlan += plan; coSpend += aSpend; coTLeads += tL; coALeads += aLeads;
+    if (tC > 0 && cv > 0) { coTSpendForCpl += aSpend; coAConvForCpl += cv; coCplTW += tC * cv; coCplSP += cv; }
+    if (plan > 0) { coSet++; if ((aSpend / plan) * 100 <= 105) coOnPace++; }
+    const acp = tC > 0 && aCpl > 0 ? (aCpl <= tC ? CO_PILL.good : CO_PILL.bad) : CO_PILL.none;
+    const rem = remainOf(tt.end);
+    let daysTxt: string, daysColor: string;
+    if (rem == null) { daysTxt = "—"; daysColor = "#CBD5E1"; }
+    else if (rem < 0) { daysTxt = t("Ended"); daysColor = "#94A3B8"; }
+    else if (rem === 0) { daysTxt = t("Last day"); daysColor = "#DC2626"; }
+    else { daysTxt = rem + "d"; daysColor = rem <= 7 ? "#D97706" : "#059669"; }
+    return {
+      name: p, color: colorOf(p), leadType: leadDefOf(p), obj: CO_OBJ[p] ?? "—",
+      start: tt.start != null ? String(tt.start) : "", end: tt.end != null ? String(tt.end) : "", daysTxt, daysColor,
+      plan: tt.plan != null ? String(tt.plan) : "", leads: tt.leads != null ? String(tt.leads) : "", cpl: tt.cpl != null ? String(tt.cpl) : "", ctr: tt.ctr != null ? String(tt.ctr) : "",
+      actSpend: fmt(aSpend), actLeads: fmt(aLeads), actCpl: aCpl > 0 ? fmt(aCpl) : "—", actCtr: aCtr.toFixed(2) + "%",
+      acp, bp: budgetPill(pB), lp: hitPill(pL), cpp: cplPill(pC), rp: hitPill(pR),
+      pctBudget: fmtPct(pB), pctLeads: fmtPct(pL), pctCpl: fmtPct(pC), pctCtr: fmtPct(pR),
+    };
+  });
+
+  const coBudgetPct = coPlan > 0 ? (coSpend / coPlan) * 100 : null;
+  const coLeadsPct = coTLeads > 0 ? (coALeads / coTLeads) * 100 : null;
+  const coTargetCplBlend = coCplSP > 0 ? coCplTW / coCplSP : 0;
+  const coActualCplBlend = coAConvForCpl > 0 ? coTSpendForCpl / coAConvForCpl : 0;
+  const coCplPct = coTargetCplBlend > 0 && coActualCplBlend > 0 ? (coActualCplBlend / coTargetCplBlend) * 100 : null;
+  const bt = budgetPill(coBudgetPct), ltp = hitPill(coLeadsPct), ctp = cplPill(coCplPct);
+  const coBudgetBarColor = coBudgetPct == null ? "#CBD5E1" : coBudgetPct <= 100 ? "#059669" : "#DC2626";
+  const coLeadsBarColor = coLeadsPct == null ? "#CBD5E1" : coLeadsPct >= 100 ? "#059669" : "#DC2626";
+
+  return (
+    <div style={card}>
+      <style>{`.co-input:focus{border-color:#F59E0B !important;background:#fff !important;outline:none;}.co-reset:hover{background:#F8FAFC !important;color:#0F172A !important;}`}</style>
+
+      {/* header */}
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 14, flexWrap: "wrap", marginBottom: 16 }}>
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap" }}>
+            <h2 style={h2}>{t("Campaign Overview")}</h2>
+            <span style={{ fontSize: 9, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.07em", color: "#0C1628", background: "#E2E8F0", padding: "2px 7px", borderRadius: 5 }}>{t("All-time · ignores date filter")}</span>
+            <span style={{ fontSize: 9, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.07em", color: "#1D4ED8", background: "#EFF6FF", padding: "2px 7px", borderRadius: 5 }}>{isAll ? t("All campaigns") : filter}</span>
+          </div>
+          <p style={{ fontSize: 11, color: "#94A3B8", marginTop: 3 }}>{t("Plan, schedule & targets are yours to fill — actuals and % achievement compute live. Pick a campaign chip above to focus on one.")}</p>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+            <span style={{ width: 9, height: 9, borderRadius: 3, background: "#FFFBEB", border: "1px solid #FCD34D" }} />
+            <span style={{ fontSize: 10, color: "#94A3B8", fontWeight: 700 }}>{t("You enter")}</span>
+          </div>
+          <div style={{ width: 1, height: 14, background: "#E2E8F0" }} />
+          <div className="co-reset" onClick={resetTargets} title="Reset all targets to suggested defaults" style={{ cursor: "pointer", fontSize: 11, fontWeight: 700, color: "#64748B", border: "1px solid #E2E8F0", borderRadius: 7, padding: "6px 11px" }}>{t("Reset targets")}</div>
+        </div>
+      </div>
+
+      {/* summary tiles */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 20 }}>
+        <div style={{ background: "#FAFAF9", border: "1px solid rgba(0,0,0,0.05)", borderRadius: 11, padding: "14px 16px" }}>
+          <div style={coTileLabel}>{t("Plan budget")}</div>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}><span style={coTileVal}>{fmt(coPlan)}</span><span style={coTileUnit}>₩</span></div>
+          <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 4 }}>{t("across")} {coProds.length === 1 ? `1 ${t("campaign")}` : `${coProds.length} ${t("campaigns")}`}</div>
+        </div>
+        <div style={{ background: "#fff", border: "1px solid rgba(0,0,0,0.05)", borderRadius: 11, padding: "14px 16px" }}>
+          <div style={coTileLabel}>{t("Actual spend")}</div>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}><span style={coTileVal}>{fmt(coSpend)}</span><span style={coTileUnit}>₩</span></div>
+          <div style={{ height: 6, background: "#F1F5F9", borderRadius: 3, overflow: "hidden", marginTop: 8 }}><div style={{ height: "100%", width: `${Math.min(100, coBudgetPct || 0).toFixed(0)}%`, borderRadius: 3, background: coBudgetBarColor }} /></div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: coBudgetBarColor, marginTop: 5 }}>{fmtPct(coBudgetPct)} {t("of plan used")}</div>
+        </div>
+        <div style={{ background: "#fff", border: "1px solid rgba(0,0,0,0.05)", borderRadius: 11, padding: "14px 16px" }}>
+          <div style={coTileLabel}>{t("Leads vs target")}</div>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 5 }}><span style={coTileVal}>{fmt(coALeads)}</span><span style={coTileUnit}>/ {fmt(coTLeads)}</span></div>
+          <div style={{ height: 6, background: "#F1F5F9", borderRadius: 3, overflow: "hidden", marginTop: 8 }}><div style={{ height: "100%", width: `${Math.min(100, coLeadsPct || 0).toFixed(0)}%`, borderRadius: 3, background: coLeadsBarColor }} /></div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: coLeadsBarColor, marginTop: 5 }}>{fmtPct(coLeadsPct)} {t("to target")}</div>
+        </div>
+        <div style={{ background: "#fff", border: "1px solid rgba(0,0,0,0.05)", borderRadius: 11, padding: "14px 16px" }}>
+          <div style={coTileLabel}>{t("On budget")}</div>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}><span style={coTileVal}>{coOnPace} / {coSet}</span></div>
+          <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 4 }}>{t("campaigns at or under plan")}</div>
+        </div>
+      </div>
+
+      {/* table */}
+      <div style={{ overflowX: "auto" }}>
+        <div style={{ minWidth: 1420 }}>
+          {/* group header */}
+          <div style={{ display: "grid", gridTemplateColumns: CO_GRID, gap: 7, marginBottom: 4 }}>
+            <div style={{ gridColumn: "1 / 3" }} />
+            <div style={{ gridColumn: "3 / 6", ...coGroupCell("#B45309", "#FFFBEB", "#FCD34D") }}>{t("Schedule — you enter")}</div>
+            <div style={{ gridColumn: "6 / 10", ...coGroupCell("#B45309", "#FFFBEB", "#FCD34D") }}>{t("Monthly plan / target — you enter")}</div>
+            <div style={{ gridColumn: "10 / 14", ...coGroupCell("#1D4ED8", "#EFF6FF", "#BFDBFE") }}>{t("Actual — auto")}</div>
+            <div style={{ gridColumn: "14 / 18", ...coGroupCell("#15803D", "#F0FDF4", "#BBF7D0") }}>{t("% Achievement")}</div>
+          </div>
+          {/* column header */}
+          <div style={{ display: "grid", gridTemplateColumns: CO_GRID, gap: 7, padding: "7px 0 9px", borderBottom: "1px solid #F1F5F9" }}>
+            <span style={coTh("#94A3B8")}>{t("Campaign")}</span>
+            <span style={coTh("#94A3B8")}>{t("Obj")}</span>
+            <span style={coTh("#B45309")}>{t("Start")}</span>
+            <span style={coTh("#B45309")}>{t("End")}</span>
+            <span style={coTh("#B45309", "center")}>{t("Days")}</span>
+            <span style={coTh("#B45309", "right")}>{t("Budget ₩")}</span>
+            <span style={coTh("#B45309", "right")}>{t("Leads")}</span>
+            <span style={coTh("#B45309", "right")}>{t("CPL ₩")}</span>
+            <span style={coTh("#B45309", "right")}>{t("CTR %")}</span>
+            <span style={coTh("#1D4ED8", "right")}>{t("Spend ₩")}</span>
+            <span style={coTh("#1D4ED8", "right")}>{t("Leads")}</span>
+            <span style={coTh("#1D4ED8", "center")}>{t("CPL ₩")}</span>
+            <span style={coTh("#1D4ED8", "right")}>{t("CTR")}</span>
+            <span style={coTh("#15803D", "center")}>{t("Budget")}</span>
+            <span style={coTh("#15803D", "center")}>{t("Leads")}</span>
+            <span style={coTh("#15803D", "center")}>{t("CPL")}</span>
+            <span style={coTh("#15803D", "center")}>{t("CTR")}</span>
+          </div>
+          {/* rows */}
+          {rows.map((r) => (
+            <div key={r.name} style={{ display: "grid", gridTemplateColumns: CO_GRID, gap: 7, padding: "8px 0", borderBottom: "1px solid #F8FAFC", alignItems: "center" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, paddingLeft: 2, minWidth: 0 }}>
+                <div style={{ width: 8, height: 8, borderRadius: 2, flexShrink: 0, background: r.color }} />
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.name}</div>
+                  <div style={{ fontSize: 9, color: "#94A3B8", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>{t(r.leadType)}</div>
+                </div>
+              </div>
+              <span style={{ fontSize: 11, fontWeight: 600, color: "#475569" }}>{r.obj}</span>
+              <input className="co-input" type="date" value={r.start} onChange={(e) => setTarget(r.name, "start", e.target.value)} style={coDateInput} />
+              <input className="co-input" type="date" value={r.end} onChange={(e) => setTarget(r.name, "end", e.target.value)} style={coDateInput} />
+              <span style={{ textAlign: "center", fontSize: 12, fontWeight: 700, color: r.daysColor }}>{r.daysTxt}</span>
+              <input className="co-input" type="text" inputMode="numeric" value={coGroupNum(r.plan)} placeholder="0" onChange={(e) => setTarget(r.name, "plan", e.target.value.replace(/[^\d]/g, ""))} style={coNumInput} />
+              <input className="co-input" type="number" value={r.leads} placeholder="0" onChange={(e) => setTarget(r.name, "leads", e.target.value)} style={coNumInput} />
+              <input className="co-input" type="number" value={r.cpl} placeholder="0" onChange={(e) => setTarget(r.name, "cpl", e.target.value)} style={coNumInput} />
+              <input className="co-input" type="number" step="0.1" value={r.ctr} placeholder="0" onChange={(e) => setTarget(r.name, "ctr", e.target.value)} style={coNumInput} />
+              <span style={{ textAlign: "right", fontSize: 12, fontWeight: 700, color: "#0F172A" }}>{r.actSpend}</span>
+              <span style={{ textAlign: "right", fontSize: 12, fontWeight: 600, color: "#0F172A" }}>{r.actLeads}</span>
+              <span style={{ textAlign: "center" }}><span style={{ fontSize: 11, fontWeight: 700, padding: "2px 7px", borderRadius: 5, background: r.acp.bg, color: r.acp.color, display: "inline-block" }}>{r.actCpl}</span></span>
+              <span style={{ textAlign: "right", fontSize: 12, fontWeight: 600, color: "#64748B" }}>{r.actCtr}</span>
+              <span style={{ textAlign: "center" }}><span style={coPillStyle(r.bp)}>{r.pctBudget}</span></span>
+              <span style={{ textAlign: "center" }}><span style={coPillStyle(r.lp)}>{r.pctLeads}</span></span>
+              <span style={{ textAlign: "center" }}><span style={coPillStyle(r.cpp)}>{r.pctCpl}</span></span>
+              <span style={{ textAlign: "center" }}><span style={coPillStyle(r.rp)}>{r.pctCtr}</span></span>
+            </div>
+          ))}
+          {/* totals */}
+          <div style={{ display: "grid", gridTemplateColumns: CO_GRID, gap: 7, padding: "11px 0 0", alignItems: "center" }}>
+            <span style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.05em", color: "#0F172A", paddingLeft: 2 }}>{t("Total")}</span>
+            <span /><span /><span /><span />
+            <span style={{ textAlign: "right", fontSize: 12, fontWeight: 800, color: "#0F172A" }}>{fmt(coPlan)}</span>
+            <span style={{ textAlign: "right", fontSize: 12, fontWeight: 800, color: "#0F172A" }}>{fmt(coTLeads)}</span>
+            <span /><span />
+            <span style={{ textAlign: "right", fontSize: 12, fontWeight: 800, color: "#0F172A" }}>{fmt(coSpend)}</span>
+            <span style={{ textAlign: "right", fontSize: 12, fontWeight: 800, color: "#0F172A" }}>{fmt(coALeads)}</span>
+            <span /><span />
+            <span style={{ textAlign: "center" }}><span style={coPillStyle(bt)}>{fmtPct(coBudgetPct)}</span></span>
+            <span style={{ textAlign: "center" }}><span style={coPillStyle(ltp)}>{fmtPct(coLeadsPct)}</span></span>
+            <span style={{ textAlign: "center" }}><span style={coPillStyle(ctp)}>{fmtPct(coCplPct)}</span></span>
+            <span />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /* ── shared style objects ───────────────────────────────────────────── */
