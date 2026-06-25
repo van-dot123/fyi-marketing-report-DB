@@ -153,7 +153,8 @@ function creativeRemaining(end: string, status: string): { label: string; kind: 
   return { label: `${days}d left`, kind: "green" };
 }
 
-const AC_GRID = "176px 110px 84px 52px 70px 56px 56px 64px 96px 112px 84px";
+const AC_GRID = "176px 110px 84px 52px 70px 56px 56px 64px 96px 132px 84px";
+const acEndInput: React.CSSProperties = { boxSizing: "border-box", width: "100%", border: "1px solid #FCD34D", borderRadius: 5, padding: "3px 5px", fontSize: 10.5, fontWeight: 600, color: "#0F172A", background: "#FFFBEB", fontFamily: FONT };
 
 function cplStyle(c: number, avg: number) {
   if (c <= 0) return { bg: "#F1F5F9", color: "#64748B" };
@@ -223,6 +224,7 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
   const [hover, setHover] = useState<number | null>(null);
   const [acOpen, setAcOpen] = useState<Record<string, boolean>>({});
   const [coTargets, setCoTargets] = useState<CoTargets | null>(null);
+  const [acEnd, setAcEnd] = useState<Record<string, string>>({});
 
   // CTR targets + campaign end dates come from the Campaign Overview store.
   // CTR targets drive the CTR pills; the ON/OFF badge follows the sheet Status.
@@ -234,6 +236,20 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
     window.addEventListener("storage", read);
     return () => window.removeEventListener("storage", read);
   }, []);
+
+  // Manual per-creative End overrides (default is the campaign end date).
+  useEffect(() => {
+    try { const s = localStorage.getItem("fyi_ac_end_v1"); if (s) setAcEnd(JSON.parse(s)); } catch { /* ignore */ }
+  }, []);
+
+  const setEndOverride = (key: string, val: string) => {
+    setAcEnd((prev) => {
+      const next = { ...prev };
+      if (val) next[key] = val; else delete next[key]; // empty reverts to default
+      try { localStorage.setItem("fyi_ac_end_v1", JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  };
 
   const toggleAcGroup = (aud: string, gi: number) =>
     setAcOpen((prev) => ({ ...prev, [aud]: !(prev[aud] ?? gi === 0) }));
@@ -287,7 +303,7 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
     return m;
   }, [meta, coTargets]);
 
-  const vm = useMemo(() => buildViewModel(meta, days, filter, metrics, log, sess, t, campaignEnd), [meta, days, filter, metrics, log, sess, t, campaignEnd]);
+  const vm = useMemo(() => buildViewModel(meta, days, filter, metrics, log, sess, t, campaignEnd, acEnd), [meta, days, filter, metrics, log, sess, t, campaignEnd, acEnd]);
 
   // CTR target for the current scope (selected campaign's monthly target, else 1.0).
   const targetCTR = (() => {
@@ -709,16 +725,7 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
                           <div style={{ textAlign: "right", fontSize: 12, color: "#64748B" }}>{c.cpc}</div>
                           <div style={{ textAlign: "center" }}><span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 5, background: tier.bg, color: tier.color }}>{c.ctrNum.toFixed(2)}%</span></div>
                           <span style={{ fontSize: 11, color: "#64748B" }}>{c.cStart || "—"}</span>
-                          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                            {c.cEnd ? (
-                              <>
-                                <span style={{ fontSize: 11, color: "#475569" }}>{c.cEnd}</span>
-                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
-                              </>
-                            ) : (
-                              <span style={{ fontSize: 11, color: "#CBD5E1" }}>{t("set end")} →</span>
-                            )}
-                          </div>
+                          <input type="date" value={c.cEnd} onChange={(e) => setEndOverride(`${g.aud} ${c.key}`, e.target.value)} title={t("Creative end — editable; defaults to the campaign end date")} style={acEndInput} />
                           <div style={{ textAlign: "center" }}>
                             {c.rem && c.rem.kind !== "none" ? (
                               <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 5, background: REM_PILL[c.rem.kind].bg, color: REM_PILL[c.rem.kind].color }}>{c.rem.label}</span>
@@ -856,7 +863,7 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
 
 /* ── view-model builder ─────────────────────────────────────────────── */
 
-function buildViewModel(meta: MetaDay[], days: MetaDay[], filter: string, metrics: Metric[], log: LogEntry[], sess: { byDay: Map<string, number>; available: boolean }, t: (s: string) => string, campaignEnd: Record<string, string>) {
+function buildViewModel(meta: MetaDay[], days: MetaDay[], filter: string, metrics: Metric[], log: LogEntry[], sess: { byDay: Map<string, number>; available: boolean }, t: (s: string) => string, campaignEnd: Record<string, string>, acEnd: Record<string, string>) {
   const isAll = filter === "All";
   const sel = filter;
   const selColor = isAll ? "#2563EB" : colorOf(sel);
@@ -1147,9 +1154,10 @@ function buildViewModel(meta: MetaDay[], days: MetaDay[], filter: string, metric
       if ((r.date || "") >= m.sd) { m.status = r.status || m.status; m.sd = r.date || m.sd; } // keep latest status
     }
   }
-  const acRow = (name: string, color: string, o: Agg, maxSpend: number, meta?: { start: string; end: string; status: string; product: string }) => {
-    // Creative End defaults to the campaign end date when the sheet leaves it blank.
-    const effEnd = meta ? meta.end || campaignEnd[meta.product] || "" : "";
+  const acRow = (name: string, color: string, o: Agg, maxSpend: number, meta?: { start: string; end: string; status: string; product: string }, override?: string) => {
+    // End: a manual override wins; otherwise default to the sheet's Creative End,
+    // else the campaign end date.
+    const effEnd = (override && override.trim()) || (meta ? meta.end || campaignEnd[meta.product] || "" : "");
     return {
     key: name, name, color,
     cost: fmt(o.spend), costBarW: ((o.spend / maxSpend) * 100).toFixed(1),
@@ -1176,7 +1184,7 @@ function buildViewModel(meta: MetaDay[], days: MetaDay[], filter: string, metric
     .filter((g) => g.cres.length > 0)
     .sort((a, b) => b.gt.spend - a.gt.spend);
   const acGroups = acRaw.map((g, gi) => {
-    const creatives = g.cres.map((c, ci) => acRow(c.name, PALETTE[ci % PALETTE.length], c.o, g.gMax, acMeta.get(`${g.aud} ${c.name}`)));
+    const creatives = g.cres.map((c, ci) => acRow(c.name, PALETTE[ci % PALETTE.length], c.o, g.gMax, acMeta.get(`${g.aud} ${c.name}`), acEnd[`${g.aud} ${c.name}`]));
     const activeCount = creatives.filter((c) => !c.off).length; // ACTIVE = Status ACTIVE (badge shows active/total)
     return {
       aud: g.aud,
