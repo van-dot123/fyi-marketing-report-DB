@@ -140,9 +140,16 @@ const REM_PILL = {
   green: { bg: "#DCFCE7", color: "#166534" },
   amber: { bg: "#FEF3C7", color: "#92400E" },
   red: { bg: "#FEE2E2", color: "#991B1B" },
+  issues: { bg: "#FFEDD5", color: "#9A3412" },
 };
-function creativeRemaining(end: string, status: string): { label: string; kind: "green" | "amber" | "red" | "none" } {
-  if (status && status.toUpperCase() !== "ACTIVE") return { label: "stopped", kind: "red" };
+function creativeRemaining(end: string, status: string): { label: string; kind: "green" | "amber" | "red" | "issues" | "none" } {
+  const raw = (status || "").trim();
+  const s = raw.toUpperCase();
+  if (s && s !== "ACTIVE") {
+    // Show the sheet's status verbatim; color paused states red, other
+    // non-active states (WITH_ISSUES, PENDING_REVIEW, DISAPPROVED, ...) amber/orange.
+    return { label: raw, kind: s.includes("PAUSED") ? "red" : "issues" };
+  }
   if (!end) return { label: "—", kind: "none" };
   const e = new Date(end + "T00:00:00");
   if (isNaN(e.getTime())) return { label: "—", kind: "none" };
@@ -153,7 +160,7 @@ function creativeRemaining(end: string, status: string): { label: string; kind: 
   return { label: `${days}d left`, kind: "green" };
 }
 
-const AC_GRID = "176px 110px 84px 52px 70px 56px 56px 64px 96px 132px 84px";
+const AC_GRID = "176px 110px 84px 52px 70px 56px 56px 64px 96px 132px 124px";
 const acEndInput: React.CSSProperties = { boxSizing: "border-box", width: "100%", border: "1px solid #FCD34D", borderRadius: 5, padding: "3px 5px", fontSize: 10.5, fontWeight: 600, color: "#0F172A", background: "#FFFBEB", fontFamily: FONT };
 
 function cplStyle(c: number, avg: number) {
@@ -706,13 +713,11 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
                   <>
                     {g.creatives.map((c) => {
                       const tier = ctrTierFor(c.ctrNum, targetCTR);
-                      const off = c.off;
                       return (
-                        <div key={c.key} style={{ display: "grid", gridTemplateColumns: AC_GRID, gap: 8, padding: "9px 0", borderBottom: "1px solid #F8FAFC", alignItems: "center", opacity: off ? 0.55 : 1 }}>
+                        <div key={c.key} style={{ display: "grid", gridTemplateColumns: AC_GRID, gap: 8, padding: "9px 0", borderBottom: "1px solid #F8FAFC", alignItems: "center" }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 8, paddingLeft: 14 }}>
                             <div style={{ width: 7, height: 7, borderRadius: "50%", background: c.color, flexShrink: 0 }} />
-                            <span style={{ fontSize: 12, color: "#334155", textDecoration: off ? "line-through" : "none" }}>{c.name}</span>
-                            <span title={c.status || (off ? "Paused" : "Active")} style={{ fontSize: 9, fontWeight: 700, padding: "1px 6px", borderRadius: 4, background: off ? "#F1F5F9" : "#DCFCE7", color: off ? "#94A3B8" : "#166534", flexShrink: 0, letterSpacing: "0.04em" }}>{off ? "OFF" : "ON"}</span>
+                            <span style={{ fontSize: 12, color: "#334155" }}>{c.name}</span>
                           </div>
                           <div>
                             <div style={{ fontSize: 12, fontWeight: 700, color: "#0F172A", marginBottom: 4 }}>{c.cost}</div>
