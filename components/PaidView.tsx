@@ -331,6 +331,14 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
           </div>
         </div>
 
+        {/* DATA NOTE — mis-configured campaigns excluded */}
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 10, background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 10, padding: "11px 14px" }}>
+          <div style={{ width: 16, height: 16, borderRadius: "50%", background: "#F59E0B", color: "#fff", fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1 }}>!</div>
+          <div style={{ fontSize: 12, color: "#92400E", lineHeight: 1.5 }}>
+            <span style={{ fontWeight: 700 }}>Launch-App</span> &amp; <span style={{ fontWeight: 700 }}>CVReg</span>: {t("count the latest campaign only. Earlier mis-configured campaigns spent budget without valid results and are excluded so KPIs (CPL, CTR, spend) stay accurate.")}
+          </div>
+        </div>
+
         {/* KPI ROW */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 13 }}>
           {vm.kpis.map((k) => (

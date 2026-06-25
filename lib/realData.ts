@@ -17,6 +17,14 @@ async function safeRaw(tab: string): Promise<string[][]> {
   }
 }
 
+// Older mis-configured Launch-App & CVReg campaigns kept spending budget while
+// producing no/invalid results. Exclude them so each product counts only its
+// latest campaign and KPIs (CPL, CTR, spend) stay accurate.
+const EXCLUDED_CAMPAIGNS = new Set([
+  "FYI_Launch-App_MT-Install_18062026_cso",
+  "FYI_CVReg_MT-lead_21062026_bud:aso",
+]);
+
 export interface MetaDay {
   date: string;
   week: string;
@@ -49,7 +57,12 @@ export async function getMetaDays(): Promise<MetaDay[]> {
 
   const result = rows
     .slice(1)
-    .filter((r) => campaignIdx < 0 || String(r[campaignIdx] ?? "").toUpperCase().includes("FYI"))
+    .filter((r) => {
+      if (campaignIdx < 0) return true;
+      const camp = String(r[campaignIdx] ?? "");
+      if (!camp.toUpperCase().includes("FYI")) return false;
+      return !EXCLUDED_CAMPAIGNS.has(camp.trim());
+    })
     .map((r) => {
       const date = dayOf(r[dateIdx]);
       const impressions = parseMetaNum(r[impressionsIdx]);

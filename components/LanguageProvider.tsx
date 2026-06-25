@@ -70,6 +70,8 @@ const KO: Record<string, string> = {
   "Lead definition": "리드 정의",
   "Lead =": "리드 =",
   "varies by campaign": "캠페인별 상이",
+  "count the latest campaign only. Earlier mis-configured campaigns spent budget without valid results and are excluded so KPIs (CPL, CTR, spend) stay accurate.":
+    "최신 캠페인만 집계합니다. 이전의 잘못 설정된 캠페인은 예산만 소진하고 유효한 결과가 없어, KPI(CPL·CTR·지출) 정확도를 위해 제외했습니다.",
   "Campaign:": "캠페인:",
   Across: "총",
   campaigns: "개 캠페인",
