@@ -108,16 +108,52 @@ function ctrCol(v: number) {
   return v >= 1.2 ? "#059669" : v >= 0.7 ? "#D97706" : "#DC2626";
 }
 
-// 5-tier CTR pill colors used by the Audience × Creative table.
-function ctrTier(v: number) {
-  if (v >= 1.2) return { bg: "#DCFCE7", color: "#166534" };
-  if (v >= 1.0) return { bg: "#D1FAE5", color: "#15803D" };
-  if (v >= 0.8) return { bg: "#FEF3C7", color: "#854D0E" };
-  if (v >= 0.6) return { bg: "#FFEDD5", color: "#9A3412" };
-  return { bg: "#FEE2E2", color: "#991B1B" };
+// 5-tier CTR pill colors used by the Audience × Creative table. The band
+// boundaries are derived from the campaign CTR target (not hardcoded).
+const CTR_TIERS = [
+  { bg: "#DCFCE7", color: "#166534" },
+  { bg: "#D1FAE5", color: "#15803D" },
+  { bg: "#FEF3C7", color: "#854D0E" },
+  { bg: "#FFEDD5", color: "#9A3412" },
+  { bg: "#FEE2E2", color: "#991B1B" },
+];
+function ctrTierFor(v: number, target: number) {
+  if (v >= target + 0.2) return CTR_TIERS[0];
+  if (v >= target) return CTR_TIERS[1];
+  if (v >= target - 0.1) return CTR_TIERS[2];
+  if (v >= target - 0.2) return CTR_TIERS[3];
+  return CTR_TIERS[4];
+}
+function ctrLegendFor(target: number) {
+  return [
+    { l: `≥${(target + 0.2).toFixed(1)}%`, ...CTR_TIERS[0] },
+    { l: `≥${target.toFixed(1)}%`, ...CTR_TIERS[1] },
+    { l: `≥${(target - 0.1).toFixed(1)}%`, ...CTR_TIERS[2] },
+    { l: `≥${(target - 0.2).toFixed(1)}%`, ...CTR_TIERS[3] },
+    { l: `<${(target - 0.2).toFixed(1)}%`, ...CTR_TIERS[4] },
+  ];
 }
 
-const AC_GRID = "176px 110px 84px 52px 70px 56px 56px 64px minmax(150px,1fr)";
+// Remaining-life pill for a creative. A non-ACTIVE effective_status overrides
+// the date logic.
+const REM_PILL = {
+  green: { bg: "#DCFCE7", color: "#166534" },
+  amber: { bg: "#FEF3C7", color: "#92400E" },
+  red: { bg: "#FEE2E2", color: "#991B1B" },
+};
+function creativeRemaining(end: string, status: string): { label: string; kind: "green" | "amber" | "red" | "none" } {
+  if (status && status.toUpperCase() !== "ACTIVE") return { label: "stopped", kind: "red" };
+  if (!end) return { label: "—", kind: "none" };
+  const e = new Date(end + "T00:00:00");
+  if (isNaN(e.getTime())) return { label: "—", kind: "none" };
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const days = Math.round((e.getTime() - today.getTime()) / 86400000);
+  if (days < 0) return { label: "ended", kind: "red" };
+  if (days <= 5) return { label: `${days}d left`, kind: "amber" };
+  return { label: `${days}d left`, kind: "green" };
+}
+
+const AC_GRID = "176px 110px 84px 52px 70px 56px 56px 64px 96px 112px 84px";
 
 function cplStyle(c: number, avg: number) {
   if (c <= 0) return { bg: "#F1F5F9", color: "#64748B" };
@@ -186,43 +222,18 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
   const trendRef = useRef<SVGSVGElement>(null);
   const [hover, setHover] = useState<number | null>(null);
   const [acOpen, setAcOpen] = useState<Record<string, boolean>>({});
-  const [acNotes, setAcNotes] = useState<Record<string, string>>({});
-  const [acOff, setAcOff] = useState<Record<string, boolean>>({});
+  const [coTargets, setCoTargets] = useState<CoTargets | null>(null);
 
+  // CTR targets + campaign end dates come from the Campaign Overview store.
+  // CTR targets drive the CTR pills; the ON/OFF badge follows the sheet Status.
   useEffect(() => {
-    try {
-      const savedNotes = localStorage.getItem("fyi_ac_notes_v1");
-      if (savedNotes) setAcNotes(JSON.parse(savedNotes));
-      const savedOff = localStorage.getItem("fyi_ac_off_v1");
-      if (savedOff) setAcOff(JSON.parse(savedOff));
-    } catch {
-      /* ignore */
-    }
+    const read = () => {
+      try { const s = localStorage.getItem("fyi_co_targets_v2"); setCoTargets(s ? JSON.parse(s) : null); } catch { setCoTargets(null); }
+    };
+    read();
+    window.addEventListener("storage", read);
+    return () => window.removeEventListener("storage", read);
   }, []);
-
-  const toggleOff = (key: string) => {
-    setAcOff((prev) => {
-      const next = { ...prev, [key]: !prev[key] };
-      try {
-        localStorage.setItem("fyi_ac_off_v1", JSON.stringify(next));
-      } catch {
-        /* ignore */
-      }
-      return next;
-    });
-  };
-
-  const setNote = (key: string, val: string) => {
-    setAcNotes((prev) => {
-      const next = { ...prev, [key]: val };
-      try {
-        localStorage.setItem("fyi_ac_notes_v1", JSON.stringify(next));
-      } catch {
-        /* ignore */
-      }
-      return next;
-    });
-  };
 
   const toggleAcGroup = (aud: string, gi: number) =>
     setAcOpen((prev) => ({ ...prev, [aud]: !(prev[aud] ?? gi === 0) }));
@@ -265,7 +276,25 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
     return { byDay, available };
   }, [ga4, start, end, filter]);
 
-  const vm = useMemo(() => buildViewModel(meta, days, filter, metrics, log, sess, t), [meta, days, filter, metrics, log, sess, t]);
+  // Per-campaign end date from the Campaign Overview store (default for a
+  // creative's End when the sheet leaves Creative End blank).
+  const campaignEnd = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const p of new Set(meta.map((r) => r.product).filter(Boolean))) {
+      const e = coTargets?.[p]?.end ?? CO_SEED[p]?.end;
+      if (e) m[p] = String(e);
+    }
+    return m;
+  }, [meta, coTargets]);
+
+  const vm = useMemo(() => buildViewModel(meta, days, filter, metrics, log, sess, t, campaignEnd), [meta, days, filter, metrics, log, sess, t, campaignEnd]);
+
+  // CTR target for the current scope (selected campaign's monthly target, else 1.0).
+  const targetCTR = (() => {
+    const raw = filter !== "All" ? (coTargets?.[filter]?.ctr ?? CO_SEED[filter]?.ctr) : undefined;
+    const n = parseFloat(String(raw ?? ""));
+    return isFinite(n) && n > 0 ? n : 1.0;
+  })();
 
   if (days.length === 0) {
     return (
@@ -622,10 +651,9 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
               <span style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8" }}>CTR:</span>
-              {[{ l: "≥1.2%", v: 1.2 }, { l: "≥1.0%", v: 1.0 }, { l: "≥0.8%", v: 0.8 }, { l: "≥0.6%", v: 0.6 }, { l: "<0.6%", v: 0 }].map((c) => {
-                const tier = ctrTier(c.v);
-                return <span key={c.l} style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 5, background: tier.bg, color: tier.color }}>{c.l}</span>;
-              })}
+              {ctrLegendFor(targetCTR).map((c) => (
+                <span key={c.l} style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 5, background: c.bg, color: c.color }}>{c.l}</span>
+              ))}
             </div>
           </div>
 
@@ -638,13 +666,15 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
             <span style={{ ...th, textAlign: "right" }}>{t("Click")}</span>
             <span style={{ ...th, textAlign: "right" }}>{t("CPC")}</span>
             <span style={{ ...th, textAlign: "center" }}>{t("CTR")}</span>
-            <span style={th}>{t("Note")}</span>
+            <span style={th}>{t("Start")}</span>
+            <span style={th}>{t("End")}</span>
+            <span style={{ ...th, textAlign: "center" }}>{t("Remaining")}</span>
           </div>
 
           {vm.audCre.groups.map((g, gi) => {
             const open = acOpen[g.aud] ?? gi === 0;
             const gt = g.total;
-            const gtTier = ctrTier(gt.ctrNum);
+            const gtTier = ctrTierFor(gt.ctrNum, targetCTR);
             return (
               <div key={g.aud}>
                 <div onClick={() => toggleAcGroup(g.aud, gi)} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid #F8FAFC", cursor: "pointer" }}>
@@ -659,15 +689,14 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
                 {open && (
                   <>
                     {g.creatives.map((c) => {
-                      const tier = ctrTier(c.ctrNum);
-                      const nkey = `${g.aud}::${c.key}`;
-                      const off = !!acOff[nkey];
+                      const tier = ctrTierFor(c.ctrNum, targetCTR);
+                      const off = c.off;
                       return (
                         <div key={c.key} style={{ display: "grid", gridTemplateColumns: AC_GRID, gap: 8, padding: "9px 0", borderBottom: "1px solid #F8FAFC", alignItems: "center", opacity: off ? 0.55 : 1 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 8, paddingLeft: 14 }}>
                             <div style={{ width: 7, height: 7, borderRadius: "50%", background: c.color, flexShrink: 0 }} />
                             <span style={{ fontSize: 12, color: "#334155", textDecoration: off ? "line-through" : "none" }}>{c.name}</span>
-                            <span onClick={() => toggleOff(nkey)} title={off ? "Turned off — click to mark active" : "Mark as turned off"} style={{ cursor: "pointer", fontSize: 9, fontWeight: 700, padding: "1px 6px", borderRadius: 4, background: off ? "#F1F5F9" : "#DCFCE7", color: off ? "#94A3B8" : "#166534", flexShrink: 0, letterSpacing: "0.04em" }}>{off ? "OFF" : "ON"}</span>
+                            <span title={c.status || (off ? "Paused" : "Active")} style={{ fontSize: 9, fontWeight: 700, padding: "1px 6px", borderRadius: 4, background: off ? "#F1F5F9" : "#DCFCE7", color: off ? "#94A3B8" : "#166534", flexShrink: 0, letterSpacing: "0.04em" }}>{off ? "OFF" : "ON"}</span>
                           </div>
                           <div>
                             <div style={{ fontSize: 12, fontWeight: 700, color: "#0F172A", marginBottom: 4 }}>{c.cost}</div>
@@ -679,7 +708,24 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
                           <div style={{ textAlign: "right", fontSize: 12, color: "#64748B" }}>{c.click}</div>
                           <div style={{ textAlign: "right", fontSize: 12, color: "#64748B" }}>{c.cpc}</div>
                           <div style={{ textAlign: "center" }}><span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 5, background: tier.bg, color: tier.color }}>{c.ctrNum.toFixed(2)}%</span></div>
-                          <input value={acNotes[nkey] ?? ""} onChange={(e) => setNote(nkey, e.target.value)} placeholder={t("+ note...")} style={acNoteInput} />
+                          <span style={{ fontSize: 11, color: "#64748B" }}>{c.cStart || "—"}</span>
+                          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                            {c.cEnd ? (
+                              <>
+                                <span style={{ fontSize: 11, color: "#475569" }}>{c.cEnd}</span>
+                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
+                              </>
+                            ) : (
+                              <span style={{ fontSize: 11, color: "#CBD5E1" }}>{t("set end")} →</span>
+                            )}
+                          </div>
+                          <div style={{ textAlign: "center" }}>
+                            {c.rem && c.rem.kind !== "none" ? (
+                              <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 5, background: REM_PILL[c.rem.kind].bg, color: REM_PILL[c.rem.kind].color }}>{c.rem.label}</span>
+                            ) : (
+                              <span style={{ fontSize: 11, color: "#CBD5E1" }}>—</span>
+                            )}
+                          </div>
                         </div>
                       );
                     })}
@@ -692,7 +738,9 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
                       <div style={{ textAlign: "right", fontSize: 12, fontWeight: 800, color: "#0F172A" }}>{gt.click}</div>
                       <div style={{ textAlign: "right", fontSize: 12, fontWeight: 800, color: "#0F172A" }}>{gt.cpc}</div>
                       <div style={{ textAlign: "center" }}><span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 5, background: gtTier.bg, color: gtTier.color }}>{gt.ctrNum.toFixed(2)}%</span></div>
-                      <input value={acNotes[`${g.aud}::__group`] ?? ""} onChange={(e) => setNote(`${g.aud}::__group`, e.target.value)} placeholder={t("+ group note...")} style={acNoteInput} />
+                      <span style={{ fontSize: 12, color: "#CBD5E1" }}>—</span>
+                      <span style={{ fontSize: 12, color: "#CBD5E1" }}>—</span>
+                      <span style={{ textAlign: "center", fontSize: 12, color: "#CBD5E1" }}>—</span>
                     </div>
                   </>
                 )}
@@ -708,8 +756,10 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
             <div style={{ textAlign: "right", fontSize: 12, fontWeight: 700, color: "#CBD5E1" }}>{vm.audCre.grand.cpl}</div>
             <div style={{ textAlign: "right", fontSize: 12, fontWeight: 700, color: "#CBD5E1" }}>{vm.audCre.grand.click}</div>
             <div style={{ textAlign: "right", fontSize: 12, fontWeight: 700, color: "#CBD5E1" }}>{vm.audCre.grand.cpc}</div>
-            <div style={{ textAlign: "center" }}><span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 5, background: ctrTier(vm.audCre.grand.ctrNum).bg, color: ctrTier(vm.audCre.grand.ctrNum).color }}>{vm.audCre.grand.ctrNum.toFixed(2)}%</span></div>
-            <div />
+            <div style={{ textAlign: "center" }}><span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 5, background: ctrTierFor(vm.audCre.grand.ctrNum, targetCTR).bg, color: ctrTierFor(vm.audCre.grand.ctrNum, targetCTR).color }}>{vm.audCre.grand.ctrNum.toFixed(2)}%</span></div>
+            <span style={{ fontSize: 12, color: "#CBD5E1" }}>—</span>
+            <span style={{ fontSize: 12, color: "#CBD5E1" }}>—</span>
+            <span style={{ textAlign: "center", fontSize: 12, color: "#CBD5E1" }}>—</span>
           </div>
         </div>
 
@@ -806,7 +856,7 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
 
 /* ── view-model builder ─────────────────────────────────────────────── */
 
-function buildViewModel(meta: MetaDay[], days: MetaDay[], filter: string, metrics: Metric[], log: LogEntry[], sess: { byDay: Map<string, number>; available: boolean }, t: (s: string) => string) {
+function buildViewModel(meta: MetaDay[], days: MetaDay[], filter: string, metrics: Metric[], log: LogEntry[], sess: { byDay: Map<string, number>; available: boolean }, t: (s: string) => string, campaignEnd: Record<string, string>) {
   const isAll = filter === "All";
   const sel = filter;
   const selColor = isAll ? "#2563EB" : colorOf(sel);
@@ -1078,6 +1128,7 @@ function buildViewModel(meta: MetaDay[], days: MetaDay[], filter: string, metric
 
   // Audience × Creative — group by audience, then by creative (current scope)
   const acMap = new Map<string, Map<string, Agg>>();
+  const acMeta = new Map<string, { start: string; end: string; status: string; product: string; sd: string }>();
   for (const r of selRows) {
     const aud = r.audience || "(none)";
     let cm = acMap.get(aud);
@@ -1086,15 +1137,34 @@ function buildViewModel(meta: MetaDay[], days: MetaDay[], filter: string, metric
     let o = cm.get(cre);
     if (!o) cm.set(cre, (o = newAgg()));
     addRow(o, r);
+    const mk = `${aud} ${cre}`;
+    const m = acMeta.get(mk);
+    if (!m) acMeta.set(mk, { start: r.creativeStart || "", end: r.creativeEnd || "", status: r.status || "", product: r.product || "", sd: r.date || "" });
+    else {
+      if (!m.start && r.creativeStart) m.start = r.creativeStart;
+      if (!m.end && r.creativeEnd) m.end = r.creativeEnd;
+      if (!m.product && r.product) m.product = r.product;
+      if ((r.date || "") >= m.sd) { m.status = r.status || m.status; m.sd = r.date || m.sd; } // keep latest status
+    }
   }
-  const acRow = (name: string, color: string, o: Agg, maxSpend: number) => ({
+  const acRow = (name: string, color: string, o: Agg, maxSpend: number, meta?: { start: string; end: string; status: string; product: string }) => {
+    // Creative End defaults to the campaign end date when the sheet leaves it blank.
+    const effEnd = meta ? meta.end || campaignEnd[meta.product] || "" : "";
+    return {
     key: name, name, color,
     cost: fmt(o.spend), costBarW: ((o.spend / maxSpend) * 100).toFixed(1),
     imp: fmt(o.imp), lead: fmt(o.lead),
     cpl: o.lead > 0 ? fmt(o.spend / o.lead) : "—",
     click: fmt(o.clk), cpc: o.clk > 0 ? fmt(o.spend / o.clk) : "—",
     ctrNum: o.imp > 0 ? (o.clk / o.imp) * 100 : 0,
-  });
+    hasMeta: !!meta,
+    cStart: meta?.start ?? "",
+    cEnd: effEnd,
+    rem: meta ? creativeRemaining(effEnd, meta.status) : null,
+    off: !!(meta && meta.status && meta.status.toUpperCase() !== "ACTIVE"),
+    status: meta?.status ?? "",
+    };
+  };
   const acRaw = [...acMap.entries()]
     .map(([aud, cm]) => {
       const cres = [...cm.entries()].map(([name, o]) => ({ name, o })).filter((c) => c.o.spend > 0 || c.o.imp > 0).sort((a, b) => b.o.spend - a.o.spend);
@@ -1105,13 +1175,17 @@ function buildViewModel(meta: MetaDay[], days: MetaDay[], filter: string, metric
     })
     .filter((g) => g.cres.length > 0)
     .sort((a, b) => b.gt.spend - a.gt.spend);
-  const acGroups = acRaw.map((g, gi) => ({
-    aud: g.aud,
-    color: PALETTE[gi % PALETTE.length],
-    count: g.cres.length,
-    creatives: g.cres.map((c, ci) => acRow(c.name, PALETTE[ci % PALETTE.length], c.o, g.gMax)),
-    total: acRow(g.aud, PALETTE[gi % PALETTE.length], g.gt, g.gMax),
-  }));
+  const acGroups = acRaw.map((g, gi) => {
+    const creatives = g.cres.map((c, ci) => acRow(c.name, PALETTE[ci % PALETTE.length], c.o, g.gMax, acMeta.get(`${g.aud} ${c.name}`)));
+    const activeCount = creatives.filter((c) => !c.off).length; // ACTIVE = Status ACTIVE (badge shows active/total)
+    return {
+      aud: g.aud,
+      color: PALETTE[gi % PALETTE.length],
+      count: `${activeCount}/${creatives.length}`,
+      creatives,
+      total: acRow(g.aud, PALETTE[gi % PALETTE.length], g.gt, g.gMax),
+    };
+  });
   const acGrandAgg = newAgg();
   for (const g of acRaw) { acGrandAgg.spend += g.gt.spend; acGrandAgg.imp += g.gt.imp; acGrandAgg.clk += g.gt.clk; acGrandAgg.lead += g.gt.lead; }
   const audCre = {
@@ -1444,7 +1518,6 @@ const th: React.CSSProperties = { fontSize: 10, fontWeight: 700, textTransform: 
 
 const tot: React.CSSProperties = { fontSize: 13, fontWeight: 800, color: "#0F172A" };
 
-const acNoteInput: React.CSSProperties = { width: "100%", border: "1px solid #E2E8F0", borderRadius: 7, padding: "6px 10px", fontSize: 12, color: "#334155", fontFamily: FONT, background: "#fff", outline: "none" };
 
 function FontLink() {
   return (

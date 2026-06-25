@@ -37,6 +37,9 @@ export interface MetaDay {
   impressions: number;
   reach: number;
   imageUrl: string;
+  creativeStart: string;
+  creativeEnd: string;
+  status: string;
 }
 
 export async function getMetaDays(): Promise<MetaDay[]> {
@@ -54,6 +57,9 @@ export async function getMetaDays(): Promise<MetaDay[]> {
   const audienceIdx = idx("Audience");
   const campaignIdx = idx("Campaign Name");
   const imageUrlIdx = idx("Image URL");
+  const creativeStartIdx = idx("Creative Start");
+  const creativeEndIdx = idx("Creative End");
+  const statusIdx = idx("Status");
 
   const result = rows
     .slice(1)
@@ -78,6 +84,9 @@ export async function getMetaDays(): Promise<MetaDay[]> {
         impressions,
         reach: impressions,
         imageUrl: imageUrlIdx >= 0 ? r[imageUrlIdx] ?? "" : "",
+        creativeStart: creativeStartIdx >= 0 ? r[creativeStartIdx] ?? "" : "",
+        creativeEnd: creativeEndIdx >= 0 ? r[creativeEndIdx] ?? "" : "",
+        status: statusIdx >= 0 ? r[statusIdx] ?? "" : "",
       };
     })
     .filter((d) => d.date);
