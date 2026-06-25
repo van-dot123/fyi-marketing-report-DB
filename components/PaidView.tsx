@@ -714,10 +714,10 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
                     {g.creatives.map((c) => {
                       const tier = ctrTierFor(c.ctrNum, targetCTR);
                       return (
-                        <div key={c.key} style={{ display: "grid", gridTemplateColumns: AC_GRID, gap: 8, padding: "9px 0", borderBottom: "1px solid #F8FAFC", alignItems: "center" }}>
+                        <div key={c.key} style={{ display: "grid", gridTemplateColumns: AC_GRID, gap: 8, padding: "9px 0", borderBottom: "1px solid #F8FAFC", alignItems: "center", opacity: c.dim ? 0.55 : 1 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 8, paddingLeft: 14 }}>
                             <div style={{ width: 7, height: 7, borderRadius: "50%", background: c.color, flexShrink: 0 }} />
-                            <span style={{ fontSize: 12, color: "#334155" }}>{c.name}</span>
+                            <span style={{ fontSize: 12, color: "#334155", textDecoration: c.dim ? "line-through" : "none" }}>{c.name}</span>
                           </div>
                           <div>
                             <div style={{ fontSize: 12, fontWeight: 700, color: "#0F172A", marginBottom: 4 }}>{c.cost}</div>
@@ -1163,6 +1163,9 @@ function buildViewModel(meta: MetaDay[], days: MetaDay[], filter: string, metric
     // End: a manual override wins; otherwise default to the sheet's Creative End,
     // else the campaign end date.
     const effEnd = (override && override.trim()) || (meta ? meta.end || campaignEnd[meta.product] || "" : "");
+    const rem = meta ? creativeRemaining(effEnd, meta.status) : null;
+    // Dim + strike only ended or paused creatives (issues/pending stay normal).
+    const dim = !!meta && ((meta.status || "").toUpperCase().includes("PAUSED") || rem?.label === "ended");
     return {
     key: name, name, color,
     cost: fmt(o.spend), costBarW: ((o.spend / maxSpend) * 100).toFixed(1),
@@ -1173,9 +1176,10 @@ function buildViewModel(meta: MetaDay[], days: MetaDay[], filter: string, metric
     hasMeta: !!meta,
     cStart: meta?.start ?? "",
     cEnd: effEnd,
-    rem: meta ? creativeRemaining(effEnd, meta.status) : null,
+    rem,
     off: !!(meta && meta.status && meta.status.toUpperCase() !== "ACTIVE"),
     status: meta?.status ?? "",
+    dim,
     };
   };
   const acRaw = [...acMap.entries()]
