@@ -206,7 +206,7 @@ function groupBy(rows: MetaDay[], key: (r: MetaDay) => string) {
 /* ── component ──────────────────────────────────────────────────────── */
 
 export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[] }) {
-  const { start, end } = useDateRange();
+  const { start, end, previousStart, previousEnd } = useDateRange();
   const { t } = useT();
   const [filter, setFilter] = useState("All");
   const [metrics, setMetrics] = useState<Metric[]>(["leads"]);
@@ -284,6 +284,24 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
     [meta, start, end]
   );
 
+  const prevDays = useMemo(
+    () => meta.filter((r) => r.date >= previousStart && r.date <= previousEnd),
+    [meta, previousStart, previousEnd]
+  );
+
+  const prevSess = useMemo(() => {
+    const isAll = filter === "All";
+    const utm = SESSION_UTM[filter];
+    if (!isAll && utm === undefined) return 0;
+    let total = 0;
+    for (const r of ga4) {
+      if (r.channel !== "paid" || r.date < previousStart || r.date > previousEnd) continue;
+      if (!isAll && !utm!.includes(String(r.campaign ?? "").toLowerCase())) continue;
+      total += r.sessions;
+    }
+    return total;
+  }, [ga4, previousStart, previousEnd, filter]);
+
   const sess = useMemo(() => {
     const isAll = filter === "All";
     const utm = SESSION_UTM[filter];
@@ -310,7 +328,7 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
     return m;
   }, [meta, coTargets]);
 
-  const vm = useMemo(() => buildViewModel(meta, days, filter, metrics, log, sess, t, campaignEnd, acEnd), [meta, days, filter, metrics, log, sess, t, campaignEnd, acEnd]);
+  const vm = useMemo(() => buildViewModel(meta, days, filter, metrics, log, sess, t, campaignEnd, acEnd, prevDays, prevSess, previousStart, previousEnd), [meta, days, filter, metrics, log, sess, t, campaignEnd, acEnd, prevDays, prevSess, previousStart, previousEnd]);
 
   // CTR target for the current scope (selected campaign's monthly target, else 1.0).
   const targetCTR = (() => {
@@ -406,6 +424,14 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
                 <span style={{ fontSize: 12, fontWeight: 600, color: "#94A3B8" }}>{k.unit}</span>
               </div>
               <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 5 }}>{t(k.sub)}</div>
+              {k.cmp ? (
+                <div title={`${t("vs")} ${vm.prevLabel}`} style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 8 }}>
+                  <span style={{ fontSize: 12, fontWeight: 800, color: k.cmp.color }}>{k.cmp.up ? "▲" : "▼"} {Math.abs(k.cmp.pct * 100).toFixed(1)}%</span>
+                  <span style={{ fontSize: 10, color: "#CBD5E1", fontWeight: 600 }}>{t("vs prev")}</span>
+                </div>
+              ) : (
+                <div style={{ marginTop: 8, fontSize: 10, color: "#CBD5E1", fontWeight: 600 }}>{t("vs prev")}: —</div>
+              )}
             </div>
           ))}
         </div>
@@ -868,7 +894,7 @@ export default function PaidView({ meta, ga4 }: { meta: MetaDay[]; ga4: Ga4Day[]
 
 /* ── view-model builder ─────────────────────────────────────────────── */
 
-function buildViewModel(meta: MetaDay[], days: MetaDay[], filter: string, metrics: Metric[], log: LogEntry[], sess: { byDay: Map<string, number>; available: boolean }, t: (s: string) => string, campaignEnd: Record<string, string>, acEnd: Record<string, string>) {
+function buildViewModel(meta: MetaDay[], days: MetaDay[], filter: string, metrics: Metric[], log: LogEntry[], sess: { byDay: Map<string, number>; available: boolean }, t: (s: string) => string, campaignEnd: Record<string, string>, acEnd: Record<string, string>, prevDays: MetaDay[], prevSess: number, previousStart: string, previousEnd: string) {
   const isAll = filter === "All";
   const sel = filter;
   const selColor = isAll ? "#2563EB" : colorOf(sel);
@@ -926,15 +952,32 @@ function buildViewModel(meta: MetaDay[], days: MetaDay[], filter: string, metric
 
   const sessionsTotal = [...sess.byDay.values()].reduce((s, v) => s + v, 0);
 
+  // previous-period aggregates (same campaign scope) for vs-prior comparison
+  const prevSel = prevDays.filter((r) => isAll || r.product === sel);
+  let pSpend = 0, pClk = 0, pImp = 0, pConv = 0;
+  for (const r of prevSel) { pSpend += r.spend; pClk += r.clicks; pImp += r.impressions; pConv += r.leads; }
+  const pCtr = pImp > 0 ? (pClk / pImp) * 100 : 0;
+  const pCpl = pConv > 0 ? pSpend / pConv : 0;
+  const prevLabel = `${fmtDay(previousStart)} – ${fmtDay(previousEnd)}`;
+
+  // delta vs previous period; goodWhen sets the badge color ("neutral" = gray)
+  const cmp = (cur: number, prev: number, goodWhen: "up" | "down" | "neutral") => {
+    if (!prev) return null;
+    const pct = (cur - prev) / prev;
+    const up = pct >= 0;
+    const color = goodWhen === "neutral" ? "#94A3B8" : (goodWhen === "up" ? up : !up) ? "#059669" : "#DC2626";
+    return { pct, up, color };
+  };
+
   // KPIs — meta metrics from meta_ad_raw_data_v2; sessions from GA4 by UTM campaign
   const kpis = [
-    { label: "Ad Spend", value: fmt(aSpend), unit: "₩", sub: isAll ? `${t("Across")} ${products.length} ${t("campaigns")}` : sel, color: "#2563EB", iconBg: "#DBEAFE", iconShape: "3px", cardBg: "#fff", cardBorder: "rgba(0,0,0,0.04)", valColor: "#0F172A" },
-    { label: "Impressions", value: fmt(aImp), unit: "", sub: "Total impressions", color: "#0891B2", iconBg: "#CFFAFE", iconShape: "3px", cardBg: "#fff", cardBorder: "rgba(0,0,0,0.04)", valColor: "#0F172A" },
-    { label: "Clicks", value: fmt(aClk), unit: "", sub: "Link clicks", color: "#7C3AED", iconBg: "#EDE9FE", iconShape: "50%", cardBg: "#fff", cardBorder: "rgba(0,0,0,0.04)", valColor: "#0F172A" },
-    { label: "CTR", value: aCtr.toFixed(2), unit: "%", sub: "Click-through rate", color: "#D97706", iconBg: "#FEF3C7", iconShape: "50%", cardBg: "#fff", cardBorder: "rgba(0,0,0,0.04)", valColor: "#0F172A" },
-    { label: "Sessions", value: sess.available ? fmt(sessionsTotal) : "—", unit: "", sub: sess.available ? "Paid sessions (GA4 · UTM)" : "Not tracked (no website)", color: "#DB2777", iconBg: "#FCE7F3", iconShape: "50%", cardBg: sess.available ? "#fff" : "#FAFAF9", cardBorder: "rgba(0,0,0,0.04)", valColor: sess.available ? "#0F172A" : "#CBD5E1" },
-    { label: "Leads", value: fmt(aConv), unit: "", sub: `${t("Lead =")} ${leadDefLabel}`, color: "#059669", iconBg: "#DCFCE7", iconShape: "50%", cardBg: "#fff", cardBorder: "rgba(0,0,0,0.04)", valColor: "#0F172A" },
-    { label: "CP Lead", value: aCpl > 0 ? fmt(aCpl) : "—", unit: "₩", sub: "Cost per lead", color: "#475569", iconBg: "#F1F5F9", iconShape: "3px", cardBg: "#fff", cardBorder: "rgba(0,0,0,0.04)", valColor: "#0F172A" },
+    { label: "Ad Spend", value: fmt(aSpend), unit: "₩", sub: isAll ? `${t("Across")} ${products.length} ${t("campaigns")}` : sel, color: "#2563EB", iconBg: "#DBEAFE", iconShape: "3px", cardBg: "#fff", cardBorder: "rgba(0,0,0,0.04)", valColor: "#0F172A", cmp: cmp(aSpend, pSpend, "neutral") },
+    { label: "Impressions", value: fmt(aImp), unit: "", sub: "Total impressions", color: "#0891B2", iconBg: "#CFFAFE", iconShape: "3px", cardBg: "#fff", cardBorder: "rgba(0,0,0,0.04)", valColor: "#0F172A", cmp: cmp(aImp, pImp, "up") },
+    { label: "Clicks", value: fmt(aClk), unit: "", sub: "Link clicks", color: "#7C3AED", iconBg: "#EDE9FE", iconShape: "50%", cardBg: "#fff", cardBorder: "rgba(0,0,0,0.04)", valColor: "#0F172A", cmp: cmp(aClk, pClk, "up") },
+    { label: "CTR", value: aCtr.toFixed(2), unit: "%", sub: "Click-through rate", color: "#D97706", iconBg: "#FEF3C7", iconShape: "50%", cardBg: "#fff", cardBorder: "rgba(0,0,0,0.04)", valColor: "#0F172A", cmp: cmp(aCtr, pCtr, "up") },
+    { label: "Sessions", value: sess.available ? fmt(sessionsTotal) : "—", unit: "", sub: sess.available ? "Paid sessions (GA4 · UTM)" : "Not tracked (no website)", color: "#DB2777", iconBg: "#FCE7F3", iconShape: "50%", cardBg: sess.available ? "#fff" : "#FAFAF9", cardBorder: "rgba(0,0,0,0.04)", valColor: sess.available ? "#0F172A" : "#CBD5E1", cmp: sess.available ? cmp(sessionsTotal, prevSess, "up") : null },
+    { label: "Leads", value: fmt(aConv), unit: "", sub: `${t("Lead =")} ${leadDefLabel}`, color: "#059669", iconBg: "#DCFCE7", iconShape: "50%", cardBg: "#fff", cardBorder: "rgba(0,0,0,0.04)", valColor: "#0F172A", cmp: cmp(aConv, pConv, "up") },
+    { label: "CP Lead", value: aCpl > 0 ? fmt(aCpl) : "—", unit: "₩", sub: "Cost per lead", color: "#475569", iconBg: "#F1F5F9", iconShape: "3px", cardBg: "#fff", cardBorder: "rgba(0,0,0,0.04)", valColor: "#0F172A", cmp: aCpl > 0 ? cmp(aCpl, pCpl, "down") : null },
   ];
 
   // daily series
@@ -1213,7 +1256,7 @@ function buildViewModel(meta: MetaDay[], days: MetaDay[], filter: string, metric
   };
 
   return {
-    isAll, headerSub, leadDefLabel, leadDefColor, chips, kpis, products,
+    isAll, headerSub, leadDefLabel, leadDefColor, chips, kpis, products, prevLabel,
     curS, curE, logMin: rangeDays[0], logMax: rangeDays[rangeDays.length - 1],
     trendSub, metricBtns, legendLines, trendLines, rightAxisColor, trend,
     spendPath, spendArea, yLeft, yRight, xTicks, metricEmpty, emptyMsg,

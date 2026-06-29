@@ -12,10 +12,15 @@ import {
 import { Calendar, ChevronLeft, ChevronRight, ChevronDown } from "lucide-react";
 import { useT } from "@/components/LanguageProvider";
 
-const TODAY = "2026-06-23";
-// Default landing range = the most recent 2 weeks (14 days) of data.
-const DEFAULT_END = "2026-06-23";
-const DEFAULT_START = "2026-06-10";
+function todayISO(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+const TODAY = todayISO();
+// Default landing range = the most recent 1 week (7 days), ending today.
+const DEFAULT_END = TODAY;
+const DEFAULT_START = toISO(addDays(fromISO(TODAY), -6));
 
 interface DateRangeValue {
   start: string;
